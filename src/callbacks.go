@@ -1,4 +1,4 @@
-﻿package src
+package src
 
 import (
 	"coolifymanager/src/config"
@@ -86,7 +86,33 @@ func projectMenuHandler(c *td.Client, cb *td.UpdateNewCallbackQuery) error {
 
 	cbData := cb.DataString()
 	uuid := strings.TrimPrefix(cbData, "project_menu:")
-	if strings.HasPrefix(uuid,"svc:") { var found *coolify.Application; apps,_:=config.Coolify.ListApplications();for i:=range apps{if apps[i].UUID==uuid{found=&apps[i];break}};if found==nil{_,e:=cb.EditMessageText(c,"❌ Servis bulunamadı.",nil);return e};kb:=&td.ReplyMarkupInlineKeyboard{Rows:[][]td.InlineKeyboardButton{{{Text:"🔄 Yeniden Başlat",Type:&td.InlineKeyboardButtonTypeCallback{Data:[]byte("restart:"+uuid)}}, {Text:"🛑 Durdur",Type:&td.InlineKeyboardButtonTypeCallback{Data:[]byte("stop:"+uuid)}}},{{Text:"🔙 Geri",Type:&td.InlineKeyboardButtonTypeCallback{Data:[]byte("list_projects:")}}}};_,e:=cb.EditMessageText(c,fmt.Sprintf("<b>%s</b>\nDurum: <code>%s</code>\n\nBu kaynak bir Docker Compose servisidir.",found.Name,found.Status),&td.EditTextMessageOpts{ParseMode:"HTML",ReplyMarkup:kb});return e }
+	if strings.HasPrefix(uuid, "svc:") {
+		var found *coolify.Application
+		apps, _ := config.Coolify.ListApplications()
+		for i := range apps {
+			if apps[i].UUID == uuid {
+				found = &apps[i]
+				break
+			}
+		}
+		if found == nil {
+			_, e := cb.EditMessageText(c, "❌ Servis bulunamadı.", nil)
+			return e
+		}
+		kb := &td.ReplyMarkupInlineKeyboard{
+			Rows: [][]td.InlineKeyboardButton{
+				{
+					{Text: "🔄 Yeniden Başlat", Type: &td.InlineKeyboardButtonTypeCallback{Data: []byte("restart:" + uuid)}},
+					{Text: "🛑 Durdur", Type: &td.InlineKeyboardButtonTypeCallback{Data: []byte("stop:" + uuid)}},
+				},
+				{
+					{Text: "🔙 Geri", Type: &td.InlineKeyboardButtonTypeCallback{Data: []byte("list_projects:")}},
+				},
+			},
+		}
+		_, e := cb.EditMessageText(c, fmt.Sprintf("<b>%s</b>\nDurum: <code>%s</code>\n\nBu kaynak bir Docker Compose servisidir.", found.Name, found.Status), &td.EditTextMessageOpts{ParseMode: "HTML", ReplyMarkup: kb})
+		return e
+	}
 	app, err := config.Coolify.GetApplicationByUUID(uuid)
 	if err != nil {
 		_, err = cb.EditMessageText(c, "âŒ Proje yüklenemedi: "+err.Error(), nil)
