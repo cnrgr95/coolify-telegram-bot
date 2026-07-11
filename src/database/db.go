@@ -9,24 +9,24 @@ import (
 )
 
 type ScheduledTask struct {
-	ID          string    json:"_id"
-	Name        string    json:"name"
-	ProjectUUID string    json:"project_uuid"
-	Schedule    string    json:"schedule"
-	Type        string    json:"type"
-	OneTime     bool      json:"one_time"
-	NextRun     time.Time json:"next_run"
+	ID          string    `json:"_id"`
+	Name        string    `json:"name"`
+	ProjectUUID string    `json:"project_uuid"`
+	Schedule    string    `json:"schedule"`
+	Type        string    `json:"type"`
+	OneTime     bool      `json:"one_time"`
+	NextRun     time.Time `json:"next_run"`
 }
 
 type AuthorizedUser struct {
-	TelegramID int64     json:"telegram_id"
-	Role       string    json:"role"
-	UpdatedAt  time.Time json:"updated_at"
+	TelegramID int64     `json:"telegram_id"`
+	Role       string    `json:"role"`
+	UpdatedAt  time.Time `json:"updated_at"`
 }
 
 type DataStore struct {
-	Tasks []ScheduledTask  json:"tasks"
-	Users []AuthorizedUser json:"users"
+	Tasks []ScheduledTask  `json:"tasks"`
+	Users []AuthorizedUser `json:"users"`
 }
 
 var store DataStore
