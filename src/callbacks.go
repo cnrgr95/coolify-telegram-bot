@@ -200,7 +200,15 @@ func restartHandler(c *td.Client, cb *td.UpdateNewCallbackQuery) error {
 
 	cbData := cb.DataString()
 	uuid := strings.TrimPrefix(cbData, "restart:")
-	if strings.HasPrefix(uuid,"svc:"){err:=config.Coolify.ServiceAction(uuid,"restart");if err!=nil{_,_=cb.EditMessageText(c,"❌ "+err.Error(),nil)}else{_,_=cb.EditMessageText(c,"✅ Servis yeniden başlatma kuyruğuna alındı.",nil)};return nil}
+	if strings.HasPrefix(uuid, "svc:") {
+		err := config.Coolify.ServiceAction(uuid, "restart")
+		if err != nil {
+			_, _ = cb.EditMessageText(c, "❌ "+err.Error(), nil)
+		} else {
+			_, _ = cb.EditMessageText(c, "✅ Servis yeniden başlatma kuyruğuna alındı.", nil)
+		}
+		return nil
+	}
 
 	kb := &td.ReplyMarkupInlineKeyboard{
 		Rows: [][]td.InlineKeyboardButton{
@@ -357,7 +365,15 @@ func stopHandler(c *td.Client, cb *td.UpdateNewCallbackQuery) error {
 
 	cbData := cb.DataString()
 	uuid := strings.TrimPrefix(cbData, "stop:")
-	if strings.HasPrefix(uuid,"svc:"){err:=config.Coolify.ServiceAction(uuid,"stop");if err!=nil{_,_=cb.EditMessageText(c,"❌ "+err.Error(),nil)}else{_,_=cb.EditMessageText(c,"✅ Servis durdurma kuyruğuna alındı.",nil)};return nil}
+	if strings.HasPrefix(uuid, "svc:") {
+		err := config.Coolify.ServiceAction(uuid, "stop")
+		if err != nil {
+			_, _ = cb.EditMessageText(c, "❌ "+err.Error(), nil)
+		} else {
+			_, _ = cb.EditMessageText(c, "✅ Servis durdurma kuyruğuna alındı.", nil)
+		}
+		return nil
+	}
 
 	res, err := config.Coolify.StopApplicationByUUID(uuid)
 	kb := &td.ReplyMarkupInlineKeyboard{
