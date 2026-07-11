@@ -5,7 +5,7 @@ import (
 	"time"
 
 	"github.com/go-co-op/gocron/v2"
-	"go.mongodb.org/mongo-driver/v2/bson"
+	"github.com/google/uuid"
 )
 
 func TestRemoveTask(t *testing.T) {
@@ -19,7 +19,7 @@ func TestRemoveTask(t *testing.T) {
 		_ = s.Shutdown()
 	}()
 
-	taskID := bson.NewObjectID()
+	taskID := uuid.New().String()
 	job, err := s.NewJob(
 		gocron.OneTimeJob(gocron.OneTimeJobStartDateTime(time.Now().Add(1*time.Hour))),
 		gocron.NewTask(func() {}),

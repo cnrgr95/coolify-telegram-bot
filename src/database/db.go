@@ -1,173 +1,170 @@
 package database
 
 import (
-	"context"
-	"fmt"
-	"log"
+	"encoding/json"
+	"os"
+	"sync"
 	"time"
-
-	"go.mongodb.org/mongo-driver/v2/bson"
-	"go.mongodb.org/mongo-driver/v2/mongo"
-	"go.mongodb.org/mongo-driver/v2/mongo/options"
+    "fmt"
 )
 
 type ScheduledTask struct {
-	ID          bson.ObjectID `bson:"_id,omitempty"`
-	Name        string        `bson:"name"`
-	ProjectUUID string        `bson:"project_uuid"`
-	Schedule    string        `bson:"schedule"`
-	Type        string        `bson:"type"` // "restart"
-	OneTime     bool          `bson:"one_time"`
-	NextRun     time.Time     `bson:"next_run,omitempty"`
+	ID          string    json:"_id"
+	Name        string    json:"name"
+	ProjectUUID string    json:"project_uuid"
+	Schedule    string    json:"schedule"
+	Type        string    json:"type"
+	OneTime     bool      json:"one_time"
+	NextRun     time.Time json:"next_run"
 }
 
-var client *mongo.Client
-var collection *mongo.Collection
-var authorizedUsers *mongo.Collection
+type AuthorizedUser struct {
+	TelegramID int64     json:"telegram_id"
+	Role       string    json:"role"
+	UpdatedAt  time.Time json:"updated_at"
+}
+
+type DataStore struct {
+	Tasks []ScheduledTask  json:"tasks"
+	Users []AuthorizedUser json:"users"
+}
+
+var store DataStore
+var mu sync.Mutex
+var dbPath = "/app/data/bot_data.json"
 
 func Connect(uri string) error {
-	if uri == "" {
-		return fmt.Errorf("DB_URL is empty")
+	mu.Lock(); defer mu.Unlock()
+	os.MkdirAll("/app/data", 0755)
+	b, err := os.ReadFile(dbPath)
+	if err == nil {
+		json.Unmarshal(b, &store)
 	}
-
-	ctx, cancel := context.WithTimeout(context.Background(), 10*time.Second)
-	defer cancel()
-	
-	var err error
-	for i := 0; i < 5; i++ {
-		client, err = mongo.Connect(options.Client().ApplyURI(uri))
-		if err == nil {
-			err = client.Ping(ctx, nil)
-			if err == nil {
-				break
-			}
-		}
-		log.Printf("Failed to connect to MongoDB, retrying in 2 seconds... (%v)", err)
-		time.Sleep(2 * time.Second)
-	}
-	if err != nil {
-		return err
-	}
-
-	collection = client.Database("coolify_manager").Collection("scheduled_tasks")
-	authorizedUsers = client.Database("coolify_manager").Collection("authorized_users")
-	log.Println("Connected to MongoDB")
+	if store.Tasks == nil { store.Tasks = []ScheduledTask{} }
+	if store.Users == nil { store.Users = []AuthorizedUser{} }
 	return nil
 }
 
+func save() error {
+	b, err := json.MarshalIndent(store, "", "  ")
+	if err != nil { return err }
+	return os.WriteFile(dbPath, b, 0644)
+}
+
 func AddAuthorizedUser(id int64, role ...string) error {
-	if authorizedUsers == nil { return fmt.Errorf("veritabani baglantisi yok") }
-	ctx, cancel := context.WithTimeout(context.Background(), 5*time.Second); defer cancel()
+	mu.Lock(); defer mu.Unlock()
 	r := "operator"; if len(role)>0 && role[0]!="" { r=role[0] }
-	_, err := authorizedUsers.UpdateOne(ctx, bson.M{"telegram_id": id}, bson.M{"$set": bson.M{"telegram_id": id, "role": r, "updated_at": time.Now()}}, options.UpdateOne().SetUpsert(true))
-	return err
+	found := false
+	for i, u := range store.Users {
+		if u.TelegramID == id {
+			store.Users[i].Role = r
+			store.Users[i].UpdatedAt = time.Now()
+			found = true
+			break
+		}
+	}
+	if !found {
+		store.Users = append(store.Users, AuthorizedUser{TelegramID: id, Role: r, UpdatedAt: time.Now()})
+	}
+	return save()
 }
 
 func RemoveAuthorizedUser(id int64) error {
-	if authorizedUsers == nil { return fmt.Errorf("veritabani baglantisi yok") }
-	ctx, cancel := context.WithTimeout(context.Background(), 5*time.Second); defer cancel()
-	_, err := authorizedUsers.DeleteOne(ctx, bson.M{"telegram_id": id}); return err
+	mu.Lock(); defer mu.Unlock()
+	var newUsers []AuthorizedUser
+	for _, u := range store.Users {
+		if u.TelegramID != id { newUsers = append(newUsers, u) }
+	}
+	store.Users = newUsers
+	return save()
 }
 
 func IsAuthorizedUser(id int64) bool {
-	if authorizedUsers == nil { return false }
-	ctx, cancel := context.WithTimeout(context.Background(), 2*time.Second); defer cancel()
-	return authorizedUsers.FindOne(ctx, bson.M{"telegram_id": id}).Err() == nil
+	mu.Lock(); defer mu.Unlock()
+	for _, u := range store.Users {
+		if u.TelegramID == id { return true }
+	}
+	return false
 }
 
 func AuthorizedRole(id int64) string {
-	if authorizedUsers == nil { return "" }
-	ctx, cancel := context.WithTimeout(context.Background(), 2*time.Second); defer cancel()
-	var row struct{ Role string `bson:"role"` }; if authorizedUsers.FindOne(ctx,bson.M{"telegram_id":id}).Decode(&row)!=nil{return ""}; if row.Role==""{return "operator"};return row.Role
+	mu.Lock(); defer mu.Unlock()
+	for _, u := range store.Users {
+		if u.TelegramID == id {
+			if u.Role == "" { return "operator" }
+			return u.Role
+		}
+	}
+	return ""
 }
 
-type AuthorizedUser struct { TelegramID int64 `bson:"telegram_id" json:"telegram_id"`; Role string `bson:"role" json:"role"` }
-func GetAuthorizedUserRecords() ([]AuthorizedUser,error){if authorizedUsers==nil{return nil,fmt.Errorf("veritabani baglantisi kurulamadi")};ctx,cancel:=context.WithTimeout(context.Background(),5*time.Second);defer cancel();cur,err:=authorizedUsers.Find(ctx,bson.M{});if err!=nil{return nil,err};defer cur.Close(ctx);var rows []AuthorizedUser;err=cur.All(ctx,&rows);return rows,err}
+func GetAuthorizedUserRecords() ([]AuthorizedUser, error) {
+	mu.Lock(); defer mu.Unlock()
+	return append([]AuthorizedUser(nil), store.Users...), nil
+}
+
 func GetAuthorizedUsers() ([]int64, error) {
-	if authorizedUsers == nil { return nil, fmt.Errorf("veritabani baglantisi yok") }
-	ctx, cancel := context.WithTimeout(context.Background(), 5*time.Second); defer cancel()
-	cur, err := authorizedUsers.Find(ctx, bson.M{}); if err != nil { return nil, err }; defer cur.Close(ctx)
-	var rows []struct { TelegramID int64 `bson:"telegram_id"` }; if err=cur.All(ctx,&rows); err!=nil{return nil,err}
-	ids:=make([]int64,0,len(rows)); for _,row:=range rows{ids=append(ids,row.TelegramID)}; return ids,nil
+	mu.Lock(); defer mu.Unlock()
+	var ids []int64
+	for _, u := range store.Users { ids = append(ids, u.TelegramID) }
+	return ids, nil
 }
 
 func AddTask(task ScheduledTask) error {
-	if collection == nil { return fmt.Errorf("veritabani baglantisi yok") }
-	ctx, cancel := context.WithTimeout(context.Background(), 5*time.Second)
-	defer cancel()
-	_, err := collection.InsertOne(ctx, task)
-	return err
+	mu.Lock(); defer mu.Unlock()
+	store.Tasks = append(store.Tasks, task)
+	return save()
 }
 
 func GetTasks() ([]ScheduledTask, error) {
-	if collection == nil { return nil, fmt.Errorf("veritabani baglantisi yok") }
-	ctx, cancel := context.WithTimeout(context.Background(), 10*time.Second)
-	defer cancel()
-
-	cursor, err := collection.Find(ctx, bson.M{})
-	if err != nil {
-		return nil, err
-	}
-	defer cursor.Close(ctx)
-
-	var tasks []ScheduledTask
-	if err = cursor.All(ctx, &tasks); err != nil {
-		return nil, err
-	}
-	return tasks, nil
+	mu.Lock(); defer mu.Unlock()
+	return append([]ScheduledTask(nil), store.Tasks...), nil
 }
 
 func DeleteTask(id string) error {
-	if collection == nil { return fmt.Errorf("veritabani baglantisi yok") }
-	ctx, cancel := context.WithTimeout(context.Background(), 5*time.Second)
-	defer cancel()
-
-	objID, err := bson.ObjectIDFromHex(id)
-	if err != nil {
-		return err
+	mu.Lock(); defer mu.Unlock()
+	var newTasks []ScheduledTask
+	for _, t := range store.Tasks {
+		if t.ID != id { newTasks = append(newTasks, t) }
 	}
-
-	_, err = collection.DeleteOne(ctx, bson.M{"_id": objID})
-	return err
+	store.Tasks = newTasks
+	return save()
 }
 
 func GetDueOneTimeTasks() ([]ScheduledTask, error) {
-	if collection == nil { return nil, fmt.Errorf("veritabani baglantisi yok") }
-	ctx, cancel := context.WithTimeout(context.Background(), 10*time.Second)
-	defer cancel()
-
-	filter := bson.M{
-		"one_time": true,
-		"next_run": bson.M{"$lte": time.Now()},
+	mu.Lock(); defer mu.Unlock()
+	var due []ScheduledTask
+	now := time.Now()
+	for _, t := range store.Tasks {
+		if t.OneTime && (t.NextRun.Before(now) || t.NextRun.Equal(now)) {
+			due = append(due, t)
+		}
 	}
-
-	cursor, err := collection.Find(ctx, filter)
-	if err != nil {
-		return nil, err
-	}
-	defer cursor.Close(ctx)
-
-	var tasks []ScheduledTask
-	if err = cursor.All(ctx, &tasks); err != nil {
-		return nil, err
-	}
-	return tasks, nil
+	return due, nil
 }
 
-func RemoveOneTimeTask(id bson.ObjectID) error {
-	if collection == nil { return fmt.Errorf("veritabani baglantisi yok") }
-	ctx, cancel := context.WithTimeout(context.Background(), 5*time.Second)
-	defer cancel()
-
-	_, err := collection.DeleteOne(ctx, bson.M{"_id": id})
-	return err
+func RemoveOneTimeTask(id string) error {
+	return DeleteTask(id)
 }
 
-func UpdateTaskNextRun(id bson.ObjectID, nextRun time.Time) error {
-	if collection == nil { return fmt.Errorf("veritabani baglantisi yok") }
-	ctx, cancel := context.WithTimeout(context.Background(), 5*time.Second)
-	defer cancel()
+func UpdateTaskNextRun(id string, nextRun time.Time) error {
+	mu.Lock(); defer mu.Unlock()
+	for i, t := range store.Tasks {
+		if t.ID == id {
+			store.Tasks[i].NextRun = nextRun
+			break
+		}
+	}
+	return save()
+}
 
-	_, err := collection.UpdateByID(ctx, id, bson.M{"$set": bson.M{"next_run": nextRun}})
-	return err
+type LogEntry struct {
+	Timestamp string
+	Message   string
+}
+func GetLogs() ([]LogEntry, error) {
+    return []LogEntry{{Timestamp: time.Now().Format(time.RFC3339), Message: "No MongoDB logs because it is JSON backend"}}, nil
+}
+func DebugInfo() string {
+    return "Using JSON backend"
 }

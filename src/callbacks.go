@@ -10,7 +10,7 @@ import (
 	"strings"
 
 	td "github.com/AshokShau/gotdbot"
-	"go.mongodb.org/mongo-driver/v2/bson"
+	"github.com/google/uuid"
 )
 
 func listProjectsHandler(c *td.Client, cb *td.UpdateNewCallbackQuery) error {
@@ -572,7 +572,7 @@ func scheduleCreateHandler(c *td.Client, cb *td.UpdateNewCallbackQuery) error {
 	}
 
 	task := database.ScheduledTask{
-		ID:          bson.NewObjectID(),
+		ID:          uuid.New().String(),
 		Name:        app.Name,
 		ProjectUUID: uuid,
 		Type:        actionType,
