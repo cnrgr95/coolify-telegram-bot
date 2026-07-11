@@ -8,7 +8,7 @@ RUN apt-get update && \
     rm -rf /var/lib/apt/lists/*
 
 COPY go.mod go.sum ./
-RUN GOFLAGS="-mod=mod" go mod download
+RUN GOTOOLCHAIN=auto go mod download
 
 COPY . .
 
