@@ -2,4 +2,5 @@
 .env
 coolifymanager
 libtdjson.so.*
-database
+database/*.db
+database/*.sqlite
