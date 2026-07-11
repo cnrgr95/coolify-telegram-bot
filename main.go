@@ -14,11 +14,13 @@ import (
 )
 
 func main() {
+	go startWebPanel()
+
 	if err := config.InitConfig(); err != nil {
+		log.Printf("failed to init config: %v", err)
+		time.Sleep(10 * time.Minute)
 		panic("failed to init config" + err.Error())
 	}
-
-	go startWebPanel()
 
 	loc, err := time.LoadLocation("Asia/Kolkata")
 	if err != nil {
@@ -43,16 +45,23 @@ func main() {
 	})
 
 	if err != nil {
+		log.Printf("❌ Failed to create bot client: %v", err)
+		time.Sleep(10 * time.Minute)
 		log.Fatalf("❌ Failed to create bot client: %v", err)
 	}
 	err = src.InitFunc(bot)
 	if err != nil {
+		log.Printf("failed to initialize bot: %v", err)
+		time.Sleep(10 * time.Minute)
 		panic("failed to initialize bot: " + err.Error())
 	}
 
 	if err = bot.Start(); err != nil {
+		log.Printf("failed to start bot: %v", err)
+		time.Sleep(10 * time.Minute)
 		panic("failed to start bot: " + err.Error())
 	}
 
 	bot.Idle()
 }
+
