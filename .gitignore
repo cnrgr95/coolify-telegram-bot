@@ -1,0 +1,5 @@
+.idea
+.env
+coolifymanager
+libtdjson.so.*
+database
