@@ -65,10 +65,30 @@ func (c *Client) ListApplications() ([]Application, error) {
 	}
 
 	// Docker Compose servisleri /applications sonucunda yer almaz; bunları da menüye ekle.
-	if req, e := http.NewRequest("GET", c.BaseURL+"/api/v1/services", nil); e == nil {
-		req.Header.Set("Authorization", "Bearer "+c.Token)
-		if sr, e := c.Client.Do(req); e == nil { defer sr.Body.Close(); var services []struct{ UUID,Name,Status string; Applications []struct{FQDN string} `json:"applications"` }; if json.NewDecoder(sr.Body).Decode(&services)==nil { for _,s:=range services { fqdn:="";if len(s.Applications)>0{fqdn=s.Applications[0].FQDN};apps=append(apps,Application{UUID:"svc:"+s.UUID,Name:"[Servis] "+s.Name,FQDN:fqdn,Status:s.Status}) } } }
+	if req2, e := http.NewRequest("GET", c.BaseURL+"/api/v1/services", nil); e == nil {
+		req2.Header.Set("Authorization", "Bearer "+c.Token)
+		if sr, e := c.Client.Do(req2); e == nil {
+			defer sr.Body.Close()
+			var services []struct {
+				UUID         string `json:"uuid"`
+				Name         string `json:"name"`
+				Status       string `json:"status"`
+				Applications []struct {
+					FQDN string `json:"fqdn"`
+				} `json:"applications"`
+			}
+			if json.NewDecoder(sr.Body).Decode(&services) == nil {
+				for _, s := range services {
+					fqdn := ""
+					if len(s.Applications) > 0 {
+						fqdn = s.Applications[0].FQDN
+					}
+					apps = append(apps, Application{UUID: "svc:" + s.UUID, Name: "[Servis] " + s.Name, FQDN: fqdn, Status: s.Status})
+				}
+			}
+		}
 	}
+
 	// Cache the result if cache is enabled
 	if c.cache != nil {
 		c.cache.Set("applications", apps)
@@ -77,13 +97,30 @@ func (c *Client) ListApplications() ([]Application, error) {
 	return apps, nil
 }
 
-func (c *Client) ServiceAction(uuid, action string) error { uuid = strings.TrimPrefix(uuid,"svc:"); req,err:=http.NewRequest("POST",fmt.Sprintf("%s/api/v1/services/%s/%s",c.BaseURL,uuid,action),nil);if err!=nil{return err};req.Header.Set("Authorization","Bearer "+c.Token);resp,err:=c.Client.Do(req);if err!=nil{return err};defer resp.Body.Close();if resp.StatusCode<200||resp.StatusCode>=300{return fmt.Errorf("servis işlemi başarısız: %s",resp.Status)};return nil }
+func (c *Client) ServiceAction(uuid, action string) error {
+	uuid = strings.TrimPrefix(uuid, "svc:")
+	req, err := http.NewRequest("POST", fmt.Sprintf("%s/api/v1/services/%s/%s", c.BaseURL, uuid, action), nil)
+	if err != nil {
+		return err
+	}
+	req.Header.Set("Authorization", "Bearer "+c.Token)
+	resp, err := c.Client.Do(req)
+	if err != nil {
+		return err
+	}
+	defer resp.Body.Close()
+	if resp.StatusCode < 200 || resp.StatusCode >= 300 {
+		return fmt.Errorf("servis işlemi başarısız: %s", resp.Status)
+	}
+	return nil
+}
 
 func (c *Client) GetApplicationByUUID(uuid string) (*ApplicationDetail, error) {
 	cacheKey := fmt.Sprintf("app_%s", uuid)
 	if c.cache != nil {
 		if cached, found := c.cache.Get(cacheKey); found {
-			return new(cached.(ApplicationDetail)), nil
+			v := cached.(ApplicationDetail)
+			return &v, nil
 		}
 	}
 
@@ -156,7 +193,6 @@ func (c *Client) DeleteApplicationByUUID(uuid string) error {
 	if c.cache != nil {
 		c.cache.Delete(fmt.Sprintf("app_%s", uuid))
 		c.cache.Delete(fmt.Sprintf("app_envs_%s", uuid))
-
 		c.cache.Delete(fmt.Sprintf("app_start_%s", uuid))
 		c.cache.Delete(fmt.Sprintf("app_start_%s_true_true", uuid))
 		c.cache.Delete(fmt.Sprintf("app_start_%s_true_false", uuid))
@@ -252,7 +288,8 @@ func (c *Client) StartApplicationDeployment(uuid string, force, instantDeploy bo
 	cacheKey := fmt.Sprintf("app_start_%s_%v_%v", uuid, force, instantDeploy)
 	if c.cache != nil {
 		if cached, found := c.cache.Get(cacheKey); found {
-			return new(cached.(StartDeploymentResponse)), nil
+			v := cached.(StartDeploymentResponse)
+			return &v, nil
 		}
 	}
 
@@ -306,7 +343,8 @@ func (c *Client) StopApplicationByUUID(uuid string) (*StopApplicationResponse, e
 	cacheKey := fmt.Sprintf("app_stop_%s", uuid)
 	if c.cache != nil {
 		if cached, found := c.cache.Get(cacheKey); found {
-			return new(cached.(StopApplicationResponse)), nil
+			v := cached.(StopApplicationResponse)
+			return &v, nil
 		}
 	}
 
@@ -352,7 +390,8 @@ func (c *Client) RestartApplicationByUUID(uuid string) (*StartDeploymentResponse
 	cacheKey := fmt.Sprintf("app_restart_%s", uuid)
 	if c.cache != nil {
 		if cached, found := c.cache.Get(cacheKey); found {
-			return new(cached.(StartDeploymentResponse)), nil
+			v := cached.(StartDeploymentResponse)
+			return &v, nil
 		}
 	}
 
