@@ -56,6 +56,7 @@ func Connect(uri string) error {
 }
 
 func AddAuthorizedUser(id int64, role ...string) error {
+	if authorizedUsers == nil { return fmt.Errorf("veritabani baglantisi yok") }
 	ctx, cancel := context.WithTimeout(context.Background(), 5*time.Second); defer cancel()
 	r := "operator"; if len(role)>0 && role[0]!="" { r=role[0] }
 	_, err := authorizedUsers.UpdateOne(ctx, bson.M{"telegram_id": id}, bson.M{"$set": bson.M{"telegram_id": id, "role": r, "updated_at": time.Now()}}, options.UpdateOne().SetUpsert(true))
@@ -63,23 +64,27 @@ func AddAuthorizedUser(id int64, role ...string) error {
 }
 
 func RemoveAuthorizedUser(id int64) error {
+	if authorizedUsers == nil { return fmt.Errorf("veritabani baglantisi yok") }
 	ctx, cancel := context.WithTimeout(context.Background(), 5*time.Second); defer cancel()
 	_, err := authorizedUsers.DeleteOne(ctx, bson.M{"telegram_id": id}); return err
 }
 
 func IsAuthorizedUser(id int64) bool {
+	if authorizedUsers == nil { return false }
 	ctx, cancel := context.WithTimeout(context.Background(), 2*time.Second); defer cancel()
 	return authorizedUsers.FindOne(ctx, bson.M{"telegram_id": id}).Err() == nil
 }
 
 func AuthorizedRole(id int64) string {
+	if authorizedUsers == nil { return "" }
 	ctx, cancel := context.WithTimeout(context.Background(), 2*time.Second); defer cancel()
 	var row struct{ Role string `bson:"role"` }; if authorizedUsers.FindOne(ctx,bson.M{"telegram_id":id}).Decode(&row)!=nil{return ""}; if row.Role==""{return "operator"};return row.Role
 }
 
 type AuthorizedUser struct { TelegramID int64 `bson:"telegram_id" json:"telegram_id"`; Role string `bson:"role" json:"role"` }
-func GetAuthorizedUserRecords() ([]AuthorizedUser,error){ctx,cancel:=context.WithTimeout(context.Background(),5*time.Second);defer cancel();cur,err:=authorizedUsers.Find(ctx,bson.M{});if err!=nil{return nil,err};defer cur.Close(ctx);var rows []AuthorizedUser;err=cur.All(ctx,&rows);return rows,err}
+func GetAuthorizedUserRecords() ([]AuthorizedUser,error){if authorizedUsers==nil{return nil,fmt.Errorf("veritabani baglantisi kurulamadi")};ctx,cancel:=context.WithTimeout(context.Background(),5*time.Second);defer cancel();cur,err:=authorizedUsers.Find(ctx,bson.M{});if err!=nil{return nil,err};defer cur.Close(ctx);var rows []AuthorizedUser;err=cur.All(ctx,&rows);return rows,err}
 func GetAuthorizedUsers() ([]int64, error) {
+	if authorizedUsers == nil { return nil, fmt.Errorf("veritabani baglantisi yok") }
 	ctx, cancel := context.WithTimeout(context.Background(), 5*time.Second); defer cancel()
 	cur, err := authorizedUsers.Find(ctx, bson.M{}); if err != nil { return nil, err }; defer cur.Close(ctx)
 	var rows []struct { TelegramID int64 `bson:"telegram_id"` }; if err=cur.All(ctx,&rows); err!=nil{return nil,err}
@@ -87,6 +92,7 @@ func GetAuthorizedUsers() ([]int64, error) {
 }
 
 func AddTask(task ScheduledTask) error {
+	if collection == nil { return fmt.Errorf("veritabani baglantisi yok") }
 	ctx, cancel := context.WithTimeout(context.Background(), 5*time.Second)
 	defer cancel()
 	_, err := collection.InsertOne(ctx, task)
@@ -94,6 +100,7 @@ func AddTask(task ScheduledTask) error {
 }
 
 func GetTasks() ([]ScheduledTask, error) {
+	if collection == nil { return nil, fmt.Errorf("veritabani baglantisi yok") }
 	ctx, cancel := context.WithTimeout(context.Background(), 10*time.Second)
 	defer cancel()
 
@@ -111,6 +118,7 @@ func GetTasks() ([]ScheduledTask, error) {
 }
 
 func DeleteTask(id string) error {
+	if collection == nil { return fmt.Errorf("veritabani baglantisi yok") }
 	ctx, cancel := context.WithTimeout(context.Background(), 5*time.Second)
 	defer cancel()
 
@@ -124,6 +132,7 @@ func DeleteTask(id string) error {
 }
 
 func GetDueOneTimeTasks() ([]ScheduledTask, error) {
+	if collection == nil { return nil, fmt.Errorf("veritabani baglantisi yok") }
 	ctx, cancel := context.WithTimeout(context.Background(), 10*time.Second)
 	defer cancel()
 
@@ -146,6 +155,7 @@ func GetDueOneTimeTasks() ([]ScheduledTask, error) {
 }
 
 func RemoveOneTimeTask(id bson.ObjectID) error {
+	if collection == nil { return fmt.Errorf("veritabani baglantisi yok") }
 	ctx, cancel := context.WithTimeout(context.Background(), 5*time.Second)
 	defer cancel()
 
@@ -153,3 +163,11 @@ func RemoveOneTimeTask(id bson.ObjectID) error {
 	return err
 }
 
+func UpdateTaskNextRun(id bson.ObjectID, nextRun time.Time) error {
+	if collection == nil { return fmt.Errorf("veritabani baglantisi yok") }
+	ctx, cancel := context.WithTimeout(context.Background(), 5*time.Second)
+	defer cancel()
+
+	_, err := collection.UpdateByID(ctx, id, bson.M{"$set": bson.M{"next_run": nextRun}})
+	return err
+}
