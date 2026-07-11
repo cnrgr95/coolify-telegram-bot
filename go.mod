@@ -1,6 +1,6 @@
 module coolifymanager
 
-go 1.23.0
+go 1.25.0
 
 require (
 	github.com/AshokShau/gotdbot v0.9.3-0.20260608070909-e72424cfb992
