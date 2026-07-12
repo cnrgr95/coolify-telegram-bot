@@ -20,6 +20,9 @@ func startHandler(c *td.Client, msg *td.Message) error {
 		_, err := msg.ReplyText(c, "🚫 Bu botu kullanma yetkiniz yok. Yöneticiden Telegram ID'nizi eklemesini isteyin.", nil)
 		return err
 	}
+	pendingInputs.Lock()
+	delete(pendingInputs.values, msg.SenderID())
+	pendingInputs.Unlock()
 	menu := &td.ReplyMarkupShowKeyboard{IsPersistent: true, ResizeKeyboard: true, InputFieldPlaceholder: "Hızlı menüden bir işlem seçin", Rows: [][]td.KeyboardButton{
 		{{Text: "📦 Uygulamalar", Type: &td.KeyboardButtonTypeText{}}, {Text: "📊 Sistem Durumu", Type: &td.KeyboardButtonTypeText{}}},
 		{{Text: "🗄 Veritabanları", Type: &td.KeyboardButtonTypeText{}}, {Text: "📅 Zamanlanmış İşler", Type: &td.KeyboardButtonTypeText{}}},
@@ -38,6 +41,62 @@ var pendingInputs = struct {
 
 type pendingInput struct{ Kind, First, Second string }
 
+func cancelKeyboard() *td.ReplyMarkupInlineKeyboard {
+	return &td.ReplyMarkupInlineKeyboard{Rows: [][]td.InlineKeyboardButton{{
+		{Text: "✖️ İşlemi İptal Et", Type: &td.InlineKeyboardButtonTypeCallback{Data: []byte("flow_cancel")}},
+	}}}
+}
+
+func detailsFromPending(value string) string {
+	parts := strings.SplitN(value, "|", 2)
+	if len(parts) == 0 {
+		return ""
+	}
+	return parts[0]
+}
+
+func scheduleInputKeyboard(uuid, action string) *td.ReplyMarkupInlineKeyboard {
+	return &td.ReplyMarkupInlineKeyboard{Rows: [][]td.InlineKeyboardButton{
+		{{Text: "⬅️ Geri", Type: &td.InlineKeyboardButtonTypeCallback{Data: []byte("flow_schedule_back:" + uuid + ":" + action)}}},
+		{{Text: "✖️ İşlemi İptal Et", Type: &td.InlineKeyboardButtonTypeCallback{Data: []byte("flow_cancel")}}},
+	}}
+}
+
+func cancelCommandHandler(c *td.Client, msg *td.Message) error {
+	pendingInputs.Lock()
+	_, existed := pendingInputs.values[msg.SenderID()]
+	delete(pendingInputs.values, msg.SenderID())
+	pendingInputs.Unlock()
+	if existed {
+		_, err := msg.ReplyText(c, "✅ İşlem iptal edildi. Hızlı menüden devam edebilirsiniz.", nil)
+		return err
+	}
+	_, err := msg.ReplyText(c, "Bekleyen bir işlem bulunmuyor.", nil)
+	return err
+}
+
+func flowCancelHandler(c *td.Client, cb *td.UpdateNewCallbackQuery) error {
+	pendingInputs.Lock()
+	delete(pendingInputs.values, cb.SenderUserId)
+	pendingInputs.Unlock()
+	_ = cb.Answer(c, 0, false, "İşlem iptal edildi", "")
+	_, err := cb.EditMessageText(c, "✅ İşlem iptal edildi.\n\nHızlı menüden başka bir işlem seçebilirsiniz.", nil)
+	return err
+}
+
+func scheduleBackHandler(c *td.Client, cb *td.UpdateNewCallbackQuery) error {
+	pendingInputs.Lock()
+	delete(pendingInputs.values, cb.SenderUserId)
+	pendingInputs.Unlock()
+	data := strings.TrimPrefix(cb.DataString(), "flow_schedule_back:")
+	parts := strings.Split(data, ":")
+	if len(parts) != 2 {
+		return flowCancelHandler(c, cb)
+	}
+	_ = cb.Answer(c, 0, false, "Önceki adıma dönüldü", "")
+	return showScheduleModes(c, cb, parts[0], parts[1])
+}
+
 func roleKeyboard(prefix string) *td.ReplyMarkupInlineKeyboard {
 	return &td.ReplyMarkupInlineKeyboard{Rows: [][]td.InlineKeyboardButton{
 		{
@@ -47,7 +106,18 @@ func roleKeyboard(prefix string) *td.ReplyMarkupInlineKeyboard {
 		{
 			{Text: "🛡 Yönetici", Type: &td.InlineKeyboardButtonTypeCallback{Data: []byte(prefix + ":admin")}},
 		},
+		{{Text: "✖️ İşlemi İptal Et", Type: &td.InlineKeyboardButtonTypeCallback{Data: []byte("flow_cancel")}}},
 	}}
+}
+
+func isQuickMenuText(text string) bool {
+	items := []string{"📊 Sistem Durumu", "👥 Telegram Yetkileri", "🖥 Web Kullanıcıları", "➕ Telegram Kullanıcısı", "➕ Web Kullanıcısı", "📅 Zamanlanmış İşler", "🗄 Veritabanları", "🌐 Web Panel", "📦 Uygulamalar"}
+	for _, item := range items {
+		if text == item {
+			return true
+		}
+	}
+	return false
 }
 
 func quickMenuHandler(c *td.Client, msg *td.Message) error {
@@ -60,11 +130,15 @@ func quickMenuHandler(c *td.Client, msg *td.Message) error {
 	}
 	pendingInputs.Lock()
 	pending := pendingInputs.values[msg.SenderID()]
+	if pending.Kind != "" && isQuickMenuText(text) {
+		delete(pendingInputs.values, msg.SenderID())
+		pending = pendingInput{}
+	}
 	pendingInputs.Unlock()
 	if pending.Kind == "telegram_id" {
 		id, err := strconv.ParseInt(text, 10, 64)
 		if err != nil {
-			_, e := msg.ReplyText(c, "Geçerli bir Telegram ID girin.", nil)
+			_, e := msg.ReplyText(c, "Geçerli bir Telegram ID girin veya işlemi iptal edin.", &td.SendTextMessageOpts{ReplyMarkup: cancelKeyboard()})
 			return e
 		}
 		pendingInputs.Lock()
@@ -76,7 +150,7 @@ func quickMenuHandler(c *td.Client, msg *td.Message) error {
 	if pending.Kind == "web_credentials" {
 		parts := strings.Fields(text)
 		if len(parts) != 2 {
-			_, err := msg.ReplyText(c, "Kullanıcı adı ve parolayı arada boşlukla yazın.", nil)
+			_, err := msg.ReplyText(c, "Kullanıcı adı ve parolayı arada boşlukla yazın veya işlemi iptal edin.", &td.SendTextMessageOpts{ReplyMarkup: cancelKeyboard()})
 			return err
 		}
 		pendingInputs.Lock()
@@ -92,12 +166,16 @@ func quickMenuHandler(c *td.Client, msg *td.Message) error {
 		}
 		runAt, err := time.ParseInLocation("02.01.2006 15:04", text, location)
 		if err != nil || !runAt.After(time.Now()) {
-			_, replyErr := msg.ReplyText(c, "Geçerli ve gelecekte bir tarih girin. Örnek: <code>15.07.2026 03:30</code>", &td.SendTextMessageOpts{ParseMode: "HTML"})
+			_, replyErr := msg.ReplyText(c, "Geçerli ve gelecekte bir tarih girin. Örnek: <code>15.07.2026 03:30</code>", &td.SendTextMessageOpts{ParseMode: "HTML", ReplyMarkup: scheduleInputKeyboard(pending.First, detailsFromPending(pending.Second))})
 			return replyErr
 		}
 		details := strings.Split(pending.Second, "|")
 		if len(details) != 2 {
-			return nil
+			pendingInputs.Lock()
+			delete(pendingInputs.values, msg.SenderID())
+			pendingInputs.Unlock()
+			_, replyErr := msg.ReplyText(c, "İşlem bilgileri geçersiz kaldı. Lütfen hızlı menüden yeniden başlayın.", nil)
+			return replyErr
 		}
 		app, err := config.Coolify.GetApplicationByUUID(pending.First)
 		if err != nil {
@@ -126,7 +204,7 @@ func quickMenuHandler(c *td.Client, msg *td.Message) error {
 		pendingInputs.Lock()
 		delete(pendingInputs.values, msg.SenderID())
 		pendingInputs.Unlock()
-		_, err = msg.ReplyText(c, fmt.Sprintf("✅ Görev kaydedildi\n\nUygulama: %s\nİşlem: %s\nBaşlangıç: %s\nTekrar: %s", app.Name, details[0], runAt.Format("02.01.2006 15:04"), details[1]), nil)
+		_, err = msg.ReplyText(c, fmt.Sprintf("✅ Görev kaydedildi\n\nUygulama: %s\nİşlem: %s\nBaşlangıç: %s\nTekrar: %s", app.Name, taskTypeLabel(details[0]), runAt.Format("02.01.2006 15:04"), taskScheduleLabel(task)), nil)
 		return err
 	}
 	switch text {
@@ -143,7 +221,7 @@ func quickMenuHandler(c *td.Client, msg *td.Message) error {
 		pendingInputs.Lock()
 		pendingInputs.values[msg.SenderID()] = pendingInput{Kind: "telegram_id"}
 		pendingInputs.Unlock()
-		_, err := msg.ReplyText(c, "Eklemek istediğiniz kullanıcının Telegram ID'sini yazın.", nil)
+		_, err := msg.ReplyText(c, "Eklemek istediğiniz kullanıcının Telegram ID'sini yazın.", &td.SendTextMessageOpts{ReplyMarkup: cancelKeyboard()})
 		return err
 	case "➕ Web Kullanıcısı":
 		if !config.Can(msg.SenderID(), "users") {
@@ -152,7 +230,7 @@ func quickMenuHandler(c *td.Client, msg *td.Message) error {
 		pendingInputs.Lock()
 		pendingInputs.values[msg.SenderID()] = pendingInput{Kind: "web_credentials"}
 		pendingInputs.Unlock()
-		_, err := msg.ReplyText(c, "Kullanıcı adı ve parolayı yazın.\nÖrnek: <code>caner GucluParola123</code>", &td.SendTextMessageOpts{ParseMode: "HTML"})
+		_, err := msg.ReplyText(c, "Kullanıcı adı ve parolayı yazın.\nÖrnek: <code>caner GucluParola123</code>", &td.SendTextMessageOpts{ParseMode: "HTML", ReplyMarkup: cancelKeyboard()})
 		return err
 	case "📅 Zamanlanmış İşler":
 		return jobsHandler(c, msg)

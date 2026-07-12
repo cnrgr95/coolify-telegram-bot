@@ -27,6 +27,7 @@ func InitFunc(c *td.Client) error {
 
 	// Commands
 	c.OnCommand("start", startHandler)
+	c.OnCommand("iptal", cancelCommandHandler)
 	c.OnCommand("ping", pingHandler)
 	c.OnCommand("jobs", jobsHandler)
 	c.OnCommand("job", scheduleHandler)
@@ -63,6 +64,8 @@ func InitFunc(c *td.Client) error {
 	c.OnUpdateNewCallbackQuery(webUserActionHandler, callbackquery.Prefix("web_del:"))
 	c.OnUpdateNewCallbackQuery(newUserRoleHandler, callbackquery.Prefix("new_tg_role:"))
 	c.OnUpdateNewCallbackQuery(newUserRoleHandler, callbackquery.Prefix("new_web_role:"))
+	c.OnUpdateNewCallbackQuery(flowCancelHandler, callbackquery.Prefix("flow_cancel"))
+	c.OnUpdateNewCallbackQuery(scheduleBackHandler, callbackquery.Prefix("flow_schedule_back:"))
 
 	return nil
 }
