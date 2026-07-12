@@ -312,7 +312,7 @@ func pingHandler(c *td.Client, msg *td.Message) error {
 			metricText += "├ Açıklama: <code>" + html.EscapeString(metrics.Error) + "</code>\n"
 		}
 	}
-	metricText += "├ Disk: <b>N/A</b> (Sentinel current API sunmuyor)\n└ Ağ: <b>N/A</b> (Sentinel current API sunmuyor)"
+	metricText = strings.TrimSuffix(metricText, "\n")
 	text := fmt.Sprintf("<b>📊 Sistem Durumu</b>\n\n%s\n\n🤖 Bot: <b>Çalışıyor</b>\n🖥 Sunucu: <b>%s</b>\n✅ Sağlıklı kaynak: <b>%d</b>\n📦 Uygulama/servis: <b>%d</b>\n🗄 Veritabanı: <b>%d</b>\n⏱ Gecikme: <code>%d ms</code>\n🕒 Çalışma süresi: <code>%s</code>\n⚙️ İş parçacıkları: <code>%d</code>", metricText, serverStatus, healthy, len(apps), len(databases), time.Since(start).Milliseconds(), time.Since(startTime).Truncate(time.Second), runtime.NumGoroutine())
 	if len(unhealthy) > 0 {
 		text += "\n\n<b>⚠️ Sorunlu Kaynaklar</b>\n• " + strings.Join(unhealthy, "\n• ")

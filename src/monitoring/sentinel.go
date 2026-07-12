@@ -22,13 +22,14 @@ type Metrics struct {
 }
 
 func Load() Metrics {
-	bases := []string{os.Getenv("SENTINEL_URL")}
-	if bases[0] == "" {
-		bases = []string{"http://host.docker.internal:8000", "http://host.docker.internal:8888", "http://coolify-sentinel:8888"}
-	}
+	bases := []string{}
 	if discovered := discoverSentinelURL(); discovered != "" {
 		bases = append(bases, discovered)
 	}
+	if configured := os.Getenv("SENTINEL_URL"); configured != "" {
+		bases = append(bases, configured)
+	}
+	bases = append(bases, "http://coolify-sentinel:8888")
 	client := &http.Client{Timeout: 3 * time.Second}
 	token := os.Getenv("SENTINEL_TOKEN")
 	lastError := "Sentinel bağlantısı kurulamadı"
