@@ -13,6 +13,11 @@ import (
 )
 
 var s gocron.Scheduler
+var resultNotifier func(database.ScheduledTask, error)
+
+func SetResultNotifier(notifier func(database.ScheduledTask, error)) {
+	resultNotifier = notifier
+}
 
 func Start() error {
 	var err error
@@ -204,31 +209,37 @@ func parseSchedule(schedule string, t time.Time) string {
 
 func executeTask(task database.ScheduledTask) {
 	log.Printf("Executing task '%s' (%v) for project %s", task.Name, task.ID, task.ProjectUUID)
+	var executionErr error
 
 	switch task.Type {
 	case "restart":
-		_, err := config.Coolify.RestartApplicationByUUID(task.ProjectUUID)
-		if err != nil {
-			log.Printf("Error restarting project %s (Task: %s): %v", task.ProjectUUID, task.Name, err)
+		_, executionErr = config.Coolify.RestartApplicationByUUID(task.ProjectUUID)
+		if executionErr != nil {
+			log.Printf("Error restarting project %s (Task: %s): %v", task.ProjectUUID, task.Name, executionErr)
 		} else {
 			log.Printf("Successfully restarted project %s (Task: %s)", task.ProjectUUID, task.Name)
 		}
 	case "stop":
-		_, err := config.Coolify.StopApplicationByUUID(task.ProjectUUID)
-		if err != nil {
-			log.Printf("Error stopping project %s: %v", task.ProjectUUID, err)
+		_, executionErr = config.Coolify.StopApplicationByUUID(task.ProjectUUID)
+		if executionErr != nil {
+			log.Printf("Error stopping project %s: %v", task.ProjectUUID, executionErr)
 		}
 	case "redeploy":
-		_, err := config.Coolify.StartApplicationDeployment(task.ProjectUUID, true, false)
-		if err != nil {
-			log.Printf("Error redeploying project %s: %v", task.ProjectUUID, err)
+		_, executionErr = config.Coolify.StartApplicationDeployment(task.ProjectUUID, true, false)
+		if executionErr != nil {
+			log.Printf("Error redeploying project %s: %v", task.ProjectUUID, executionErr)
 		}
 	case "delete":
-		if err := config.Coolify.DeleteApplicationByUUID(task.ProjectUUID); err != nil {
-			log.Printf("Error deleting project %s: %v", task.ProjectUUID, err)
+		executionErr = config.Coolify.DeleteApplicationByUUID(task.ProjectUUID)
+		if executionErr != nil {
+			log.Printf("Error deleting project %s: %v", task.ProjectUUID, executionErr)
 		}
 	default:
+		executionErr = fmt.Errorf("unknown task type: %s", task.Type)
 		log.Printf("Unknown task type: %s (Task: %s)", task.Type, task.Name)
+	}
+	if resultNotifier != nil {
+		resultNotifier(task, executionErr)
 	}
 
 	if task.OneTime {

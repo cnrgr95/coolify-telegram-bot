@@ -4,6 +4,7 @@ import (
 	"fmt"
 	"time"
 
+	"coolifymanager/src/database"
 	"coolifymanager/src/scheduler"
 
 	td "github.com/AshokShau/gotdbot"
@@ -19,6 +20,9 @@ func InitFunc(c *td.Client) error {
 	if err := scheduler.Start(); err != nil {
 		return fmt.Errorf("scheduler start error: %s", err.Error())
 	}
+	scheduler.SetResultNotifier(func(task database.ScheduledTask, executionErr error) {
+		notifyScheduledTaskResult(c, task, executionErr)
+	})
 	go monitorResourceChanges(c)
 
 	// Commands

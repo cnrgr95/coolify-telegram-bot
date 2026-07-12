@@ -1,12 +1,14 @@
 package src
 
 import (
+	"fmt"
+	"sort"
+	"strings"
+	"time"
+
 	"coolifymanager/src/config"
 	"coolifymanager/src/database"
 	"coolifymanager/src/scheduler"
-	"fmt"
-	"strings"
-
 	td "github.com/AshokShau/gotdbot"
 )
 
@@ -17,36 +19,28 @@ func jobsHandler(c *td.Client, msg *td.Message) error {
 		_, err := msg.ReplyText(c, "🚫 Bu komutu kullanma yetkiniz yok.", nil)
 		return err
 	}
-
-	text, kb, err := buildJobsMessage(1)
+	text, keyboard, err := buildJobsMessage(1)
 	if err != nil {
 		_, err = msg.ReplyText(c, "❌ "+err.Error(), nil)
 		return err
 	}
-
-	_, err = msg.ReplyText(c, text, &td.SendTextMessageOpts{ParseMode: "HTML", ReplyMarkup: kb})
+	_, err = msg.ReplyText(c, text, &td.SendTextMessageOpts{ParseMode: "HTML", ReplyMarkup: keyboard})
 	return err
 }
 
 func jobsPaginationHandler(c *td.Client, cb *td.UpdateNewCallbackQuery) error {
-	data := cb.DataString()
 	if !config.IsDev(cb.SenderUserId) {
-		_ = cb.Answer(c, 0, true, "🚫 Bu işlem için yetkiniz yok.", "")
-		return nil
+		return cb.Answer(c, 0, true, "Bu işlem için yetkiniz yok.", "")
 	}
-
 	page := 1
-	if parts := strings.Split(data, ":"); len(parts) > 1 {
-		fmt.Sscanf(parts[1], "%d", &page)
+	if parts := strings.Split(cb.DataString(), ":"); len(parts) > 1 {
+		_, _ = fmt.Sscanf(parts[1], "%d", &page)
 	}
-
-	text, kb, err := buildJobsMessage(page)
+	text, keyboard, err := buildJobsMessage(page)
 	if err != nil {
-		_ = cb.Answer(c, 0, true, "❌ "+err.Error(), "")
-		return nil
+		return cb.Answer(c, 0, true, "❌ "+err.Error(), "")
 	}
-
-	_, err = cb.EditMessageText(c, text, &td.EditTextMessageOpts{ParseMode: "HTML", ReplyMarkup: kb})
+	_, err = cb.EditMessageText(c, text, &td.EditTextMessageOpts{ParseMode: "HTML", ReplyMarkup: keyboard})
 	return err
 }
 
@@ -55,45 +49,61 @@ func buildJobsMessage(page int) (string, td.ReplyMarkup, error) {
 	if err != nil {
 		return "", nil, fmt.Errorf("görevler alınamadı: %v", err)
 	}
-
 	if len(tasks) == 0 {
-		return "📭 Zamanlanmış görev bulunamadı.", nil, nil
+		return "📭 Henüz zamanlanmış görev yok.\n\nUygulamalar menüsünden bir uygulama seçerek yeni görev oluşturabilirsiniz.", nil, nil
 	}
-
+	sort.Slice(tasks, func(i, j int) bool { return nextTaskRun(tasks[i]).Before(nextTaskRun(tasks[j])) })
 	start, end, buttons := Paginate(len(tasks), page, pageSize, "jobs:")
-
-	var sb strings.Builder
-	kb := &td.ReplyMarkupInlineKeyboard{}
-	sb.WriteString(fmt.Sprintf("<b>📅 Zamanlanmış Görevler (Sayfa %d):</b>\n\n", page))
-
+	var text strings.Builder
+	keyboard := &td.ReplyMarkupInlineKeyboard{}
+	text.WriteString(fmt.Sprintf("<b>📅 Zamanlanmış Görevler</b>\nSayfa %d • Toplam %d görev\n\n", page, len(tasks)))
 	for _, task := range tasks[start:end] {
-		sb.WriteString(fmt.Sprintf("🆔 <code>%s</code>\n", task.ID))
-		sb.WriteString(fmt.Sprintf("🏷️ <b>Ad:</b> %s\n", task.Name))
-		sb.WriteString(fmt.Sprintf("🔧 <b>Tür:</b> %s\n", task.Type))
-		sb.WriteString(fmt.Sprintf("⏰ <b>Zamanlama:</b> %s\n", task.Schedule))
-		if task.OneTime {
-			sb.WriteString(fmt.Sprintf("⏳ <b>Sonraki Çalışma:</b> %s\n", task.NextRun.Format("2006-01-02 15:04:05")))
-		}
-		sb.WriteString("——————————\n")
-		kb.Rows = append(kb.Rows, []td.InlineKeyboardButton{{Text: "❌ " + task.Name + " görevini iptal et", Type: &td.InlineKeyboardButtonTypeCallback{Data: []byte("job_del:" + task.ID)}}})
+		text.WriteString(fmt.Sprintf("<b>📦 %s</b>\n", task.Name))
+		text.WriteString(fmt.Sprintf("├ İşlem: <b>%s</b>\n", taskTypeLabel(task.Type)))
+		text.WriteString(fmt.Sprintf("├ Tekrar: <b>%s</b>\n", taskScheduleLabel(task)))
+		text.WriteString(fmt.Sprintf("├ Sonraki çalışma: <code>%s</code>\n", nextTaskRun(task).Format("02.01.2006 15:04")))
+		text.WriteString(fmt.Sprintf("└ ID: <code>%s</code>\n\n", task.ID))
+		keyboard.Rows = append(keyboard.Rows, []td.InlineKeyboardButton{{Text: "🗑 İptal et • " + task.Name, Type: &td.InlineKeyboardButtonTypeCallback{Data: []byte("job_del:" + task.ID)}}})
 	}
-
 	if len(buttons) > 0 {
 		row := make([]td.InlineKeyboardButton, 0, len(buttons))
-
-		for _, btn := range buttons {
-			row = append(row, td.InlineKeyboardButton{
-				Text: btn.Text,
-				Type: &td.InlineKeyboardButtonTypeCallback{
-					Data: []byte(btn.Data),
-				},
-			})
+		for _, button := range buttons {
+			row = append(row, td.InlineKeyboardButton{Text: button.Text, Type: &td.InlineKeyboardButtonTypeCallback{Data: []byte(button.Data)}})
 		}
-
-		kb.Rows = append(kb.Rows, row)
+		keyboard.Rows = append(keyboard.Rows, row)
 	}
+	return text.String(), keyboard, nil
+}
 
-	return sb.String(), kb, nil
+func taskTypeLabel(taskType string) string {
+	labels := map[string]string{"restart": "Yeniden Başlat", "stop": "Durdur", "redeploy": "Redeploy", "delete": "Sil"}
+	if label := labels[taskType]; label != "" {
+		return label
+	}
+	return taskType
+}
+
+func taskScheduleLabel(task database.ScheduledTask) string {
+	if task.OneTime {
+		return "Tek seferlik"
+	}
+	labels := map[string]string{"every_1h": "Her saat", "every_24h": "Her gün", "every_168h": "Her hafta", "hourly": "Her saat", "daily": "Her gün", "weekly": "Her hafta"}
+	if label := labels[task.Schedule]; label != "" {
+		return label
+	}
+	return task.Schedule
+}
+
+func nextTaskRun(task database.ScheduledTask) time.Time {
+	if task.OneTime || task.NextRun.After(time.Now()) {
+		return task.NextRun
+	}
+	duration, ok := scheduler.ParseDurationSchedule(task.Schedule)
+	if !ok || duration <= 0 || task.NextRun.IsZero() {
+		return task.NextRun
+	}
+	elapsed := time.Since(task.NextRun)
+	return task.NextRun.Add((elapsed/duration + 1) * duration)
 }
 
 func jobDeleteHandler(c *td.Client, cb *td.UpdateNewCallbackQuery) error {
@@ -105,10 +115,11 @@ func jobDeleteHandler(c *td.Client, cb *td.UpdateNewCallbackQuery) error {
 	if err := database.DeleteTask(id); err != nil {
 		return err
 	}
-	text, kb, err := buildJobsMessage(1)
+	_ = cb.Answer(c, 0, false, "Görev iptal edildi.", "")
+	text, keyboard, err := buildJobsMessage(1)
 	if err != nil {
 		return err
 	}
-	_, err = cb.EditMessageText(c, text, &td.EditTextMessageOpts{ParseMode: "HTML", ReplyMarkup: kb})
+	_, err = cb.EditMessageText(c, text, &td.EditTextMessageOpts{ParseMode: "HTML", ReplyMarkup: keyboard})
 	return err
 }
