@@ -1,8 +1,10 @@
 package monitoring
 
 import (
+	"context"
 	"encoding/json"
 	"fmt"
+	"net"
 	"net/http"
 	"os"
 	"strings"
@@ -23,6 +25,9 @@ func Load() Metrics {
 	bases := []string{os.Getenv("SENTINEL_URL")}
 	if bases[0] == "" {
 		bases = []string{"http://host.docker.internal:8000", "http://host.docker.internal:8888", "http://coolify-sentinel:8888"}
+	}
+	if discovered := discoverSentinelURL(); discovered != "" {
+		bases = append(bases, discovered)
 	}
 	client := &http.Client{Timeout: 3 * time.Second}
 	token := os.Getenv("SENTINEL_TOKEN")
@@ -59,6 +64,40 @@ func Load() Metrics {
 		}
 	}
 	return Metrics{Error: lastError}
+}
+
+func discoverSentinelURL() string {
+	if _, err := os.Stat("/var/run/docker.sock"); err != nil {
+		return ""
+	}
+	transport := &http.Transport{DialContext: func(ctx context.Context, _, _ string) (net.Conn, error) {
+		return (&net.Dialer{Timeout: 2 * time.Second}).DialContext(ctx, "unix", "/var/run/docker.sock")
+	}}
+	client := &http.Client{Transport: transport, Timeout: 3 * time.Second}
+	response, err := client.Get("http://docker/containers/coolify-sentinel/json")
+	if err != nil {
+		return ""
+	}
+	defer response.Body.Close()
+	if response.StatusCode != http.StatusOK {
+		return ""
+	}
+	var inspect struct {
+		NetworkSettings struct {
+			Networks map[string]struct {
+				IPAddress string `json:"IPAddress"`
+			} `json:"Networks"`
+		} `json:"NetworkSettings"`
+	}
+	if json.NewDecoder(response.Body).Decode(&inspect) != nil {
+		return ""
+	}
+	for _, network := range inspect.NetworkSettings.Networks {
+		if network.IPAddress != "" {
+			return "http://" + network.IPAddress + ":8888"
+		}
+	}
+	return ""
 }
 
 func getJSON(client *http.Client, base, token, path string, target any) error {
