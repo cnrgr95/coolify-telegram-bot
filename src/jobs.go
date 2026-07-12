@@ -3,6 +3,7 @@ package src
 import (
 	"coolifymanager/src/config"
 	"coolifymanager/src/database"
+	"coolifymanager/src/scheduler"
 	"fmt"
 	"strings"
 
