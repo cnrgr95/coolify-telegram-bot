@@ -8,6 +8,7 @@ import (
 	"fmt"
 	"html/template"
 	"log"
+	"net"
 	"net/http"
 	"os"
 	"sort"
@@ -145,8 +146,28 @@ func startWebPanel() {
 		Username, Role string
 		Expires        time.Time
 	}
+	type loginAttempt struct {
+		Count        int
+		BlockedUntil time.Time
+	}
 	sessions := map[string]session{}
 	var sessionsMu sync.Mutex
+	loginAttempts := map[string]loginAttempt{}
+	var loginAttemptsMu sync.Mutex
+	securityHeaders := func(w http.ResponseWriter) {
+		w.Header().Set("X-Content-Type-Options", "nosniff")
+		w.Header().Set("X-Frame-Options", "DENY")
+		w.Header().Set("Referrer-Policy", "same-origin")
+		w.Header().Set("Permissions-Policy", "camera=(), microphone=(), geolocation=()")
+		w.Header().Set("Content-Security-Policy", "default-src 'self'; style-src 'self' 'unsafe-inline'; script-src 'self' 'unsafe-inline'; img-src 'self' data:; frame-ancestors 'none'; base-uri 'self'; form-action 'self'")
+	}
+	clientIP := func(r *http.Request) string {
+		host, _, err := net.SplitHostPort(r.RemoteAddr)
+		if err == nil {
+			return host
+		}
+		return r.RemoteAddr
+	}
 	credentials := func(username, password string) (string, bool) {
 		if subtle.ConstantTimeCompare([]byte(username), []byte(bootstrapUser)) == 1 && subtle.ConstantTimeCompare([]byte(password), []byte(bootstrapPassword)) == 1 {
 			return "admin", true
@@ -171,6 +192,7 @@ func startWebPanel() {
 	}
 	wrap := func(minRole string, next func(http.ResponseWriter, *http.Request, string, string)) http.HandlerFunc {
 		return func(w http.ResponseWriter, r *http.Request) {
+			securityHeaders(w)
 			username, role, ok := authenticate(r)
 			allowed := ok && (minRole == "viewer" || role == "admin" || (minRole == "operator" && role == "operator"))
 			if !allowed {
@@ -181,18 +203,41 @@ func startWebPanel() {
 		}
 	}
 	http.HandleFunc("/login", func(w http.ResponseWriter, r *http.Request) {
+		securityHeaders(w)
 		if r.Method == http.MethodGet {
 			w.Header().Set("Content-Type", "text/html; charset=utf-8")
 			_ = loginTemplate.Execute(w, nil)
 			return
 		}
+		ip := clientIP(r)
+		loginAttemptsMu.Lock()
+		attempt := loginAttempts[ip]
+		if time.Now().Before(attempt.BlockedUntil) {
+			loginAttemptsMu.Unlock()
+			w.WriteHeader(http.StatusTooManyRequests)
+			_ = loginTemplate.Execute(w, "Çok fazla başarısız deneme. Lütfen 15 dakika sonra tekrar deneyin.")
+			return
+		}
+		loginAttemptsMu.Unlock()
 		username, password := r.FormValue("username"), r.FormValue("password")
 		role, ok := credentials(username, password)
 		if !ok {
+			loginAttemptsMu.Lock()
+			attempt = loginAttempts[ip]
+			attempt.Count++
+			if attempt.Count >= 5 {
+				attempt.Count = 0
+				attempt.BlockedUntil = time.Now().Add(15 * time.Minute)
+			}
+			loginAttempts[ip] = attempt
+			loginAttemptsMu.Unlock()
 			w.WriteHeader(http.StatusUnauthorized)
 			_ = loginTemplate.Execute(w, "Kullanıcı adı veya parola hatalı.")
 			return
 		}
+		loginAttemptsMu.Lock()
+		delete(loginAttempts, ip)
+		loginAttemptsMu.Unlock()
 		b := make([]byte, 32)
 		_, _ = rand.Read(b)
 		token := hex.EncodeToString(b)

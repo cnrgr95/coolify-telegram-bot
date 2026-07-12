@@ -20,9 +20,9 @@ func main() {
 
 	go startWebPanel()
 
-	loc, err := time.LoadLocation("Asia/Kolkata")
+	loc, err := time.LoadLocation("Europe/Istanbul")
 	if err != nil {
-		log.Printf("⚠Failed to load Asia/Kolkata time zone: %v. Using UTC.", err)
+		log.Printf("Europe/Istanbul saat dilimi yüklenemedi: %v. UTC kullanılacak.", err)
 	} else {
 		time.Local = loc
 	}
