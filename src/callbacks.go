@@ -530,6 +530,32 @@ func scheduleActionHandler(c *td.Client, cb *td.UpdateNewCallbackQuery) error {
 	}
 	_ = cb.Answer(c, 0, false, "İşleniyor...", "")
 
+	parts := strings.Split(strings.TrimPrefix(cb.DataString(), "sch_a:"), ":")
+	if len(parts) < 2 {
+		return nil
+	}
+	uuid, actionType := parts[0], parts[1]
+	if actionType == "delete" && !config.Can(cb.SenderUserId, "delete") {
+		_ = cb.Answer(c, 0, true, "Silme işlemi için admin yetkisi gerekir.", "")
+		return nil
+	}
+	rows := [][]td.InlineKeyboardButton{
+		{{Text: "🕐 Tek seferlik", Type: &td.InlineKeyboardButtonTypeCallback{Data: []byte(fmt.Sprintf("sch_t:%s:%s:once", uuid, actionType))}}},
+	}
+	if actionType == "restart" || actionType == "redeploy" {
+		rows = append(rows,
+			[]td.InlineKeyboardButton{{Text: "🔁 Saatlik", Type: &td.InlineKeyboardButtonTypeCallback{Data: []byte(fmt.Sprintf("sch_t:%s:%s:hourly", uuid, actionType))}}},
+			[]td.InlineKeyboardButton{{Text: "🔁 Günlük", Type: &td.InlineKeyboardButtonTypeCallback{Data: []byte(fmt.Sprintf("sch_t:%s:%s:daily", uuid, actionType))}}},
+			[]td.InlineKeyboardButton{{Text: "🔁 Haftalık", Type: &td.InlineKeyboardButtonTypeCallback{Data: []byte(fmt.Sprintf("sch_t:%s:%s:weekly", uuid, actionType))}}},
+		)
+	}
+	rows = append(rows, []td.InlineKeyboardButton{{Text: "🔙 Geri", Type: &td.InlineKeyboardButtonTypeCallback{Data: []byte("sch_m:" + uuid)}}})
+	_, err := cb.EditMessageText(c, "<b>⏰ Çalışma biçimini seçin:</b>\n\nDurdur ve Sil işlemleri yalnızca tek sefer çalıştırılabilir.", &td.EditTextMessageOpts{
+		ParseMode: "HTML", ReplyMarkup: &td.ReplyMarkupInlineKeyboard{Rows: rows},
+	})
+	return err
+
+	/* Legacy callback format retained for existing Telegram messages.
 	// Format: sch_a:uuid:actionType
 	cbData := cb.DataString()
 	data := strings.TrimPrefix(cbData, "sch_a:")
@@ -602,7 +628,7 @@ func scheduleActionHandler(c *td.Client, cb *td.UpdateNewCallbackQuery) error {
 		ParseMode:   "HTML",
 		ReplyMarkup: kb,
 	})
-	return err
+	return err */
 }
 
 func scheduleCreateHandler(c *td.Client, cb *td.UpdateNewCallbackQuery) error {
@@ -665,5 +691,26 @@ func scheduleCreateHandler(c *td.Client, cb *td.UpdateNewCallbackQuery) error {
 		ParseMode:   "HTML",
 		ReplyMarkup: kb,
 	})
+	return err
+}
+
+func scheduleTimeHandler(c *td.Client, cb *td.UpdateNewCallbackQuery) error {
+	if !config.Can(cb.SenderUserId, "schedule") {
+		_ = cb.Answer(c, 0, true, "Bu işlem için yetkiniz yok.", "")
+		return nil
+	}
+	parts := strings.Split(strings.TrimPrefix(cb.DataString(), "sch_t:"), ":")
+	if len(parts) != 3 {
+		return nil
+	}
+	if (parts[1] == "stop" || parts[1] == "delete") && parts[2] != "once" {
+		_ = cb.Answer(c, 0, true, "Bu işlem yalnızca tek seferlik zamanlanabilir.", "")
+		return nil
+	}
+	pendingInputs.Lock()
+	pendingInputs.values[cb.SenderUserId] = pendingInput{Kind: "schedule_time", First: parts[0], Second: parts[1] + "|" + parts[2]}
+	pendingInputs.Unlock()
+	_ = cb.Answer(c, 0, false, "Tarih ve saati yazın", "")
+	_, err := cb.EditMessageText(c, "<b>📅 İlk çalışma tarihini ve saatini yazın</b>\n\nBiçim: <code>GG.AA.YYYY SS:DD</code>\nÖrnek: <code>15.07.2026 03:30</code>\n\nSaat dilimi: Europe/Istanbul", &td.EditTextMessageOpts{ParseMode: "HTML"})
 	return err
 }

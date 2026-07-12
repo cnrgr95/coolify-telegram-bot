@@ -44,6 +44,7 @@ func InitFunc(c *td.Client) error {
 	c.OnUpdateNewCallbackQuery(projectMenuHandler, callbackquery.Prefix("project_menu:"))
 	c.OnUpdateNewCallbackQuery(scheduleMenuHandler, callbackquery.Prefix("sch_m:"))
 	c.OnUpdateNewCallbackQuery(scheduleActionHandler, callbackquery.Prefix("sch_a:"))
+	c.OnUpdateNewCallbackQuery(scheduleTimeHandler, callbackquery.Prefix("sch_t:"))
 	c.OnUpdateNewCallbackQuery(scheduleCreateHandler, callbackquery.Prefix("sch_c:"))
 	c.OnUpdateNewCallbackQuery(restartHandler, callbackquery.Prefix("restart:"))
 	c.OnUpdateNewCallbackQuery(deployHandler, callbackquery.Prefix("deploy:"))

@@ -16,7 +16,7 @@ var s gocron.Scheduler
 
 func Start() error {
 	var err error
-	loc, err := time.LoadLocation("Asia/Kolkata")
+	loc, err := time.LoadLocation("Europe/Istanbul")
 	if err != nil {
 		log.Printf("Error loading time zone: %v, falling back to Local", err)
 		loc = time.Local
@@ -87,10 +87,14 @@ func ScheduleTask(task database.ScheduledTask) error {
 		}
 	}
 
+	options := []gocron.JobOption{gocron.WithTags(task.ID)}
+	if !task.OneTime && !task.NextRun.IsZero() && task.NextRun.After(time.Now()) {
+		options = append(options, gocron.WithStartAt(gocron.WithStartDateTime(task.NextRun)))
+	}
 	job, err := s.NewJob(
 		jobDefinition,
 		gocron.NewTask(executeTask, task),
-		gocron.WithTags(task.ID),
+		options...,
 	)
 	if err != nil {
 		return err

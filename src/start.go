@@ -3,6 +3,7 @@ package src
 import (
 	"coolifymanager/src/config"
 	"coolifymanager/src/database"
+	"coolifymanager/src/scheduler"
 	"fmt"
 	"runtime"
 	"strconv"
@@ -11,6 +12,7 @@ import (
 	"time"
 
 	td "github.com/AshokShau/gotdbot"
+	uuidpkg "github.com/google/uuid"
 )
 
 func startHandler(c *td.Client, msg *td.Message) error {
@@ -81,6 +83,50 @@ func quickMenuHandler(c *td.Client, msg *td.Message) error {
 		pendingInputs.values[msg.SenderID()] = pendingInput{Kind: "web_role", First: parts[0], Second: parts[1]}
 		pendingInputs.Unlock()
 		_, err := msg.ReplyText(c, "Web kullanıcısının rolünü seçin:", &td.SendTextMessageOpts{ReplyMarkup: roleKeyboard("new_web_role")})
+		return err
+	}
+	if pending.Kind == "schedule_time" {
+		location, err := time.LoadLocation("Europe/Istanbul")
+		if err != nil {
+			location = time.Local
+		}
+		runAt, err := time.ParseInLocation("02.01.2006 15:04", text, location)
+		if err != nil || !runAt.After(time.Now()) {
+			_, replyErr := msg.ReplyText(c, "Geçerli ve gelecekte bir tarih girin. Örnek: <code>15.07.2026 03:30</code>", &td.SendTextMessageOpts{ParseMode: "HTML"})
+			return replyErr
+		}
+		details := strings.Split(pending.Second, "|")
+		if len(details) != 2 {
+			return nil
+		}
+		app, err := config.Coolify.GetApplicationByUUID(pending.First)
+		if err != nil {
+			_, replyErr := msg.ReplyText(c, "Uygulama bilgisi alınamadı: "+err.Error(), nil)
+			return replyErr
+		}
+		schedules := map[string]string{"hourly": "every_1h", "daily": "every_24h", "weekly": "every_168h"}
+		task := database.ScheduledTask{ID: uuidpkg.New().String(), Name: app.Name, ProjectUUID: pending.First, Type: details[0], NextRun: runAt}
+		if details[1] == "once" {
+			task.OneTime, task.Schedule = true, "one_time"
+		} else {
+			task.Schedule = schedules[details[1]]
+		}
+		if task.Schedule == "" {
+			return nil
+		}
+		if err := database.AddTask(task); err != nil {
+			_, replyErr := msg.ReplyText(c, "Görev kaydedilemedi: "+err.Error(), nil)
+			return replyErr
+		}
+		if err := scheduler.ScheduleTask(task); err != nil {
+			_ = database.DeleteTask(task.ID)
+			_, replyErr := msg.ReplyText(c, "Görev zamanlanamadı: "+err.Error(), nil)
+			return replyErr
+		}
+		pendingInputs.Lock()
+		delete(pendingInputs.values, msg.SenderID())
+		pendingInputs.Unlock()
+		_, err = msg.ReplyText(c, fmt.Sprintf("✅ Görev kaydedildi\n\nUygulama: %s\nİşlem: %s\nBaşlangıç: %s\nTekrar: %s", app.Name, details[0], runAt.Format("02.01.2006 15:04"), details[1]), nil)
 		return err
 	}
 	switch text {
