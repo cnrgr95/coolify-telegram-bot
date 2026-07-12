@@ -28,7 +28,7 @@ func monitorResourceChanges(client *td.Client) {
 					if old, exists := previous[id]; !exists {
 						notifyAdmins(client, fmt.Sprintf("🆕 <b>%s</b> eklendi.\nDurum: <code>%s</code>", html.EscapeString(names[id]), statusLabel(status)))
 					} else if old != status {
-						notifyAdmins(client, fmt.Sprintf("🔔 <b>%s</b> durum değiştirdi.\n<code>%s</code> → <code>%s</code>", html.EscapeString(names[id]), statusLabel(old), statusLabel(status)))
+						notifyAdmins(client, statusChangeMessage(names[id], old, status))
 					}
 				}
 				for id, old := range previous {
@@ -44,12 +44,33 @@ func monitorResourceChanges(client *td.Client) {
 	}
 }
 
+func statusChangeMessage(name, oldStatus, newStatus string) string {
+	name = html.EscapeString(name)
+	oldStatus = strings.ToLower(oldStatus)
+	newStatus = strings.ToLower(newStatus)
+
+	switch {
+	case oldStatus == "running:unhealthy" && newStatus == "running:healthy":
+		return fmt.Sprintf("✅ <b>%s yeniden sağlıklı çalışıyor.</b>\n\nUygulamanın sağlık kontrolü normale döndü.", name)
+	case newStatus == "running:unhealthy":
+		return fmt.Sprintf("⚠️ <b>%s sağlık kontrolünden geçemedi.</b>\n\nUygulama çalışıyor ancak doğru yanıt vermiyor olabilir. Logları ve servis bağlantılarını kontrol edin.", name)
+	case newStatus == "running:healthy":
+		return fmt.Sprintf("✅ <b>%s başarıyla çalışıyor.</b>\n\nSağlık kontrolü başarılı.", name)
+	case strings.HasPrefix(newStatus, "exited"):
+		return fmt.Sprintf("⛔ <b>%s durdu.</b>\n\nÖnceki durum: %s\nYeni durum: %s", name, statusLabel(oldStatus), statusLabel(newStatus))
+	case newStatus == "restarting":
+		return fmt.Sprintf("🔄 <b>%s yeniden başlatılıyor.</b>", name)
+	default:
+		return fmt.Sprintf("🔔 <b>%s durum değiştirdi.</b>\n\nÖnceki durum: %s\nYeni durum: %s", name, statusLabel(oldStatus), statusLabel(newStatus))
+	}
+}
+
 func statusLabel(status string) string {
 	labels := map[string]string{
-		"running:healthy":   "Çalışıyor • Sağlıklı",
-		"running:unhealthy": "Çalışıyor • Sağlıksız",
-		"running:unknown":   "Çalışıyor • Sağlık bilinmiyor",
-		"exited:unhealthy":  "Durduruldu • Sağlıksız",
+		"running:healthy":   "Çalışıyor ve sağlık kontrolü başarılı",
+		"running:unhealthy": "Çalışıyor ancak sağlık kontrolü başarısız",
+		"running:unknown":   "Çalışıyor ancak sağlık durumu henüz bilinmiyor",
+		"exited:unhealthy":  "Durduruldu; son sağlık kontrolü başarısızdı",
 		"exited":            "Durduruldu",
 		"restarting":        "Yeniden başlatılıyor",
 	}
