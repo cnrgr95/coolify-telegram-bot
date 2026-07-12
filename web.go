@@ -50,6 +50,8 @@ type systemMetrics struct {
 	RAMUsed   uint64  `json:"ram_used"`
 	RAMTotal  uint64  `json:"ram_total"`
 	Available bool    `json:"available"`
+	Source    string  `json:"source,omitempty"`
+	Error     string  `json:"error,omitempty"`
 }
 
 func loadSystemMetrics() systemMetrics {
@@ -58,37 +60,62 @@ func loadSystemMetrics() systemMetrics {
 		bases = []string{"http://host.docker.internal:8000", "http://host.docker.internal:8888", "http://coolify-sentinel:8888"}
 	}
 	client := &http.Client{Timeout: 3 * time.Second}
+	token := os.Getenv("SENTINEL_TOKEN")
+	lastError := "Sentinel bağlantısı kurulamadı"
 	for _, base := range bases {
 		var result systemMetrics
-		if response, err := client.Get(strings.TrimRight(base, "/") + "/api/cpu/current"); err == nil {
+		result.Source = base
+		request, _ := http.NewRequest(http.MethodGet, strings.TrimRight(base, "/")+"/api/cpu/current", nil)
+		if token != "" {
+			request.Header.Set("Authorization", "Bearer "+token)
+		}
+		if response, err := client.Do(request); err == nil {
+			if response.StatusCode == http.StatusUnauthorized {
+				lastError = "Sentinel kimlik doğrulaması başarısız"
+			} else if response.StatusCode != http.StatusOK {
+				lastError = fmt.Sprintf("Sentinel CPU endpointi HTTP %d döndürdü", response.StatusCode)
+			}
 			var data struct {
 				Percent float64 `json:"percent"`
 			}
-			if json.NewDecoder(response.Body).Decode(&data) == nil {
+			if response.StatusCode == http.StatusOK && json.NewDecoder(response.Body).Decode(&data) == nil {
 				result.CPU = data.Percent
 				result.Available = true
 			}
 			response.Body.Close()
+		} else if err != nil {
+			lastError = "Sentinel CPU endpointine erişilemiyor: " + err.Error()
 		}
-		if response, err := client.Get(strings.TrimRight(base, "/") + "/api/memory/current"); err == nil {
+		request, _ = http.NewRequest(http.MethodGet, strings.TrimRight(base, "/")+"/api/memory/current", nil)
+		if token != "" {
+			request.Header.Set("Authorization", "Bearer "+token)
+		}
+		if response, err := client.Do(request); err == nil {
+			if response.StatusCode == http.StatusUnauthorized {
+				lastError = "Sentinel kimlik doğrulaması başarısız"
+			} else if response.StatusCode != http.StatusOK {
+				lastError = fmt.Sprintf("Sentinel RAM endpointi HTTP %d döndürdü", response.StatusCode)
+			}
 			var data struct {
 				UsedPercent float64 `json:"usedPercent"`
 				Used        uint64  `json:"used"`
 				Total       uint64  `json:"total"`
 			}
-			if json.NewDecoder(response.Body).Decode(&data) == nil {
+			if response.StatusCode == http.StatusOK && json.NewDecoder(response.Body).Decode(&data) == nil {
 				result.RAM = data.UsedPercent
 				result.RAMUsed = data.Used
 				result.RAMTotal = data.Total
 				result.Available = true
 			}
 			response.Body.Close()
+		} else if err != nil {
+			lastError = "Sentinel RAM endpointine erişilemiyor: " + err.Error()
 		}
 		if result.Available {
 			return result
 		}
 	}
-	return systemMetrics{}
+	return systemMetrics{Error: lastError}
 }
 
 type projectGroup struct {
