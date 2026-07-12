@@ -585,7 +585,7 @@ func scheduleCreateHandler(c *td.Client, cb *td.UpdateNewCallbackQuery) error {
 	}
 
 	if err := scheduler.ScheduleTask(task); err != nil {
-		_ = database.DeleteTask(task.ID.Hex())
+		_ = database.DeleteTask(task.ID)
 		_, _ = cb.EditMessageText(c, "âŒ Failed to schedule task: "+err.Error(), nil)
 		return nil
 	}
@@ -603,16 +603,9 @@ func scheduleCreateHandler(c *td.Client, cb *td.UpdateNewCallbackQuery) error {
 		},
 	}
 
-	_, err = cb.EditMessageText(c, fmt.Sprintf("âœ… Görev başarıyla zamanlandı!\n\nID: <code>%s</code>\nType: %s\nZamanla: %s", task.ID.Hex(), actionType, schedule), &td.EditTextMessageOpts{
+	_, err = cb.EditMessageText(c, fmt.Sprintf("âœ… Görev başarıyla zamanlandı!\n\nID: <code>%s</code>\nType: %s\nZamanla: %s", task.ID, actionType, schedule), &td.EditTextMessageOpts{
 		ParseMode:   "HTML",
 		ReplyMarkup: kb,
 	})
 	return err
 }
-
-
-
-
-
-
-

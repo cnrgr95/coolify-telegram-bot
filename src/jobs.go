@@ -1,4 +1,4 @@
-﻿package src
+package src
 
 import (
 	"coolifymanager/src/config"
@@ -65,7 +65,7 @@ func buildJobsMessage(page int) (string, td.ReplyMarkup, error) {
 	sb.WriteString(fmt.Sprintf("<b>ğŸ“… Zamanlanmış Görevler (Page %d):</b>\n\n", page))
 
 	for _, task := range tasks[start:end] {
-		sb.WriteString(fmt.Sprintf("ğŸ†” <code>%s</code>\n", task.ID.Hex()))
+		sb.WriteString(fmt.Sprintf("ğŸ†” <code>%s</code>\n", task.ID))
 		sb.WriteString(fmt.Sprintf("ğŸ·ï¸ <b>Name:</b> %s\n", task.Name))
 		sb.WriteString(fmt.Sprintf("ğŸ”§ <b>Type:</b> %s\n", task.Type))
 		sb.WriteString(fmt.Sprintf("â° <b>Zamanlama:</b> %s\n", task.Schedule))
@@ -93,4 +93,3 @@ func buildJobsMessage(page int) (string, td.ReplyMarkup, error) {
 
 	return sb.String(), kb, nil
 }
-

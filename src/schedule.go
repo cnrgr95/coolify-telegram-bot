@@ -169,11 +169,11 @@ func scheduleHandler(c *td.Client, msg *td.Message) error {
 	}
 
 	if err := scheduler.ScheduleTask(task); err != nil {
-		_ = database.DeleteTask(task.ID.Hex())
+		_ = database.DeleteTask(task.ID)
 		_, err = msg.ReplyText(c, fmt.Sprintf("❌ Error scheduling task: %v", err), nil)
 		return err
 	}
 
-	_, err = msg.ReplyText(c, fmt.Sprintf("✅ Task scheduled successfully!\nID: %s", task.ID.Hex()), nil)
+	_, err = msg.ReplyText(c, fmt.Sprintf("✅ Task scheduled successfully!\nID: %s", task.ID), nil)
 	return err
 }

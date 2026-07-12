@@ -23,7 +23,7 @@ func TestRemoveTask(t *testing.T) {
 	job, err := s.NewJob(
 		gocron.OneTimeJob(gocron.OneTimeJobStartDateTime(time.Now().Add(1*time.Hour))),
 		gocron.NewTask(func() {}),
-		gocron.WithTags(taskID.Hex()),
+		gocron.WithTags(taskID),
 	)
 	if err != nil {
 		t.Fatal(err)
@@ -40,7 +40,7 @@ func TestRemoveTask(t *testing.T) {
 		t.Fatal("Job not found after adding")
 	}
 
-	if err := RemoveTask(taskID.Hex()); err != nil {
+	if err := RemoveTask(taskID); err != nil {
 		t.Fatalf("RemoveTask failed: %v", err)
 	}
 	found = false

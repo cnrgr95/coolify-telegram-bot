@@ -74,12 +74,12 @@ func ScheduleTask(task database.ScheduledTask) error {
 		}
 
 		if isDaySchedule || strings.Contains(task.Schedule, "_at_") {
-			cronExpr := parseSchedule(task.Schedule, task.ID.Timestamp())
+			cronExpr := parseSchedule(task.Schedule, scheduleAnchor(task))
 			jobDefinition = gocron.CronJob(cronExpr, false)
 		} else if d, ok := ParseDurationSchedule(task.Schedule); ok {
 			jobDefinition = gocron.DurationJob(d)
 		} else {
-			cronExpr := parseSchedule(task.Schedule, task.ID.Timestamp())
+			cronExpr := parseSchedule(task.Schedule, scheduleAnchor(task))
 			jobDefinition = gocron.CronJob(
 				cronExpr,
 				false,
@@ -90,7 +90,7 @@ func ScheduleTask(task database.ScheduledTask) error {
 	job, err := s.NewJob(
 		jobDefinition,
 		gocron.NewTask(executeTask, task),
-		gocron.WithTags(task.ID.Hex()),
+		gocron.WithTags(task.ID),
 	)
 	if err != nil {
 		return err
@@ -98,6 +98,13 @@ func ScheduleTask(task database.ScheduledTask) error {
 
 	log.Printf("Scheduled job %s for task %v", job.ID(), task.ID)
 	return nil
+}
+
+func scheduleAnchor(task database.ScheduledTask) time.Time {
+	if !task.NextRun.IsZero() {
+		return task.NextRun
+	}
+	return time.Now()
 }
 
 func RemoveTask(id string) error {
