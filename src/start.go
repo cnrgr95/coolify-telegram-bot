@@ -7,6 +7,7 @@ import (
 	"runtime"
 	"strconv"
 	"strings"
+	"sync"
 	"time"
 
 	td "github.com/AshokShau/gotdbot"
@@ -17,34 +18,91 @@ func startHandler(c *td.Client, msg *td.Message) error {
 		_, err := msg.ReplyText(c, "🚫 Bu botu kullanma yetkiniz yok. Yöneticiden Telegram ID'nizi eklemesini isteyin.", nil)
 		return err
 	}
-	text := "<b>🎛 FL Panel Coolify Yönetimi</b>\n\nUygulamalarınızı Telegram ve web panelinden güvenle yönetebilirsiniz."
-	kb := &td.ReplyMarkupInlineKeyboard{Rows: [][]td.InlineKeyboardButton{
-		{{Text: "📦 Uygulamalar", Type: &td.InlineKeyboardButtonTypeCallback{Data: []byte("list_projects")}}},
-		{{Text: "📅 Zamanlanmış İşler", Type: &td.InlineKeyboardButtonTypeCallback{Data: []byte("jobs:1")}}},
-	}}
 	menu := &td.ReplyMarkupShowKeyboard{IsPersistent: true, ResizeKeyboard: true, InputFieldPlaceholder: "Hızlı menüden bir işlem seçin", Rows: [][]td.KeyboardButton{
 		{{Text: "📦 Uygulamalar", Type: &td.KeyboardButtonTypeText{}}, {Text: "📊 Sistem Durumu", Type: &td.KeyboardButtonTypeText{}}},
 		{{Text: "👥 Telegram Yetkileri", Type: &td.KeyboardButtonTypeText{}}, {Text: "🖥 Web Kullanıcıları", Type: &td.KeyboardButtonTypeText{}}},
+		{{Text: "➕ Telegram Kullanıcısı", Type: &td.KeyboardButtonTypeText{}}, {Text: "➕ Web Kullanıcısı", Type: &td.KeyboardButtonTypeText{}}},
 		{{Text: "📅 Zamanlanmış İşler", Type: &td.KeyboardButtonTypeText{}}, {Text: "🌐 Web Panel", Type: &td.KeyboardButtonTypeText{}}},
 	}}
-	_, err := msg.ReplyText(c, text, &td.SendTextMessageOpts{ParseMode: "HTML", ReplyMarkup: kb})
-	if err == nil {
-		_, err = msg.ReplyText(c, "Hızlı menü aktif.", &td.SendTextMessageOpts{ReplyMarkup: menu})
-	}
+	_, err := msg.ReplyText(c, "Hoş geldiniz. Yapmak istediğiniz işlemi aşağıdaki hızlı menüden seçin.", &td.SendTextMessageOpts{ReplyMarkup: menu})
 	return err
 }
+
+var pendingInputs = struct {
+	sync.Mutex
+	values map[int64]string
+}{values: map[int64]string{}}
 
 func quickMenuHandler(c *td.Client, msg *td.Message) error {
 	if !config.IsDev(msg.SenderID()) {
 		return nil
 	}
-	switch strings.TrimSpace(msg.Text()) {
+	text := strings.TrimSpace(msg.Text())
+	if strings.HasPrefix(text, "/") {
+		return nil
+	}
+	pendingInputs.Lock()
+	pending := pendingInputs.values[msg.SenderID()]
+	if pending != "" {
+		delete(pendingInputs.values, msg.SenderID())
+	}
+	pendingInputs.Unlock()
+	if pending == "telegram_add" {
+		parts := strings.Fields(text)
+		if len(parts) != 2 {
+			_, err := msg.ReplyText(c, "Geçersiz format. Örnek: <code>123456789 viewer</code>", &td.SendTextMessageOpts{ParseMode: "HTML"})
+			return err
+		}
+		id, err := strconv.ParseInt(parts[0], 10, 64)
+		if err == nil {
+			err = database.AddAuthorizedUser(id, parts[1])
+		}
+		if err != nil {
+			_, e := msg.ReplyText(c, "❌ "+err.Error(), nil)
+			return e
+		}
+		_, err = msg.ReplyText(c, "✅ Telegram kullanıcısı eklendi.", nil)
+		return err
+	}
+	if pending == "web_add" {
+		parts := strings.Fields(text)
+		if len(parts) != 3 {
+			_, err := msg.ReplyText(c, "Geçersiz format. Örnek: <code>kullanici GucluParola123 viewer</code>", &td.SendTextMessageOpts{ParseMode: "HTML"})
+			return err
+		}
+		err := database.AddWebUser(parts[0], parts[1], parts[2])
+		if err != nil {
+			_, e := msg.ReplyText(c, "❌ "+err.Error(), nil)
+			return e
+		}
+		_, err = msg.ReplyText(c, "✅ Web kullanıcısı eklendi.", nil)
+		return err
+	}
+	switch text {
 	case "📊 Sistem Durumu":
 		return pingHandler(c, msg)
 	case "👥 Telegram Yetkileri":
 		return listAuthorizedHandler(c, msg)
 	case "🖥 Web Kullanıcıları":
 		return listWebUsersHandler(c, msg)
+	case "➕ Telegram Kullanıcısı":
+		if !config.Can(msg.SenderID(), "users") {
+			return nil
+		}
+		pendingInputs.Lock()
+		pendingInputs.values[msg.SenderID()] = "telegram_add"
+		pendingInputs.Unlock()
+		_, err := msg.ReplyText(c, "Telegram ID ve rolü yazın.\nÖrnek: <code>123456789 viewer</code>", &td.SendTextMessageOpts{ParseMode: "HTML"})
+		return err
+	case "➕ Web Kullanıcısı":
+		if !config.Can(msg.SenderID(), "users") {
+			return nil
+		}
+		pendingInputs.Lock()
+		pendingInputs.values[msg.SenderID()] = "web_add"
+		pendingInputs.Unlock()
+		_, err := msg.ReplyText(c, "Kullanıcı adı, parola ve rolü yazın.\nÖrnek: <code>caner GucluParola123 operator</code>", &td.SendTextMessageOpts{ParseMode: "HTML"})
+		return err
 	case "📅 Zamanlanmış İşler":
 		return jobsHandler(c, msg)
 	case "🌐 Web Panel":
@@ -67,7 +125,32 @@ func pingHandler(c *td.Client, msg *td.Message) error {
 	if err != nil {
 		return err
 	}
-	text := fmt.Sprintf("<b>📊 Sistem Durumu</b>\n\n✅ Bot çalışıyor\n⏱ Gecikme: <code>%d ms</code>\n🕒 Çalışma süresi: <code>%s</code>\n⚙️ Go iş parçacıkları: <code>%d</code>", time.Since(start).Milliseconds(), time.Since(startTime).Truncate(time.Second), runtime.NumGoroutine())
+	apps, _ := config.Coolify.ListApplications()
+	databases, _ := config.Coolify.ListDatabases()
+	servers, _ := config.Coolify.ListServers()
+	healthy, unhealthy := 0, []string{}
+	for _, app := range apps {
+		if strings.Contains(app.Status, "healthy") || strings.Contains(app.Status, "running") {
+			healthy++
+		} else {
+			unhealthy = append(unhealthy, app.Name+" ("+app.Status+")")
+		}
+	}
+	for _, db := range databases {
+		if strings.Contains(db.Status, "healthy") || strings.Contains(db.Status, "running") {
+			healthy++
+		} else {
+			unhealthy = append(unhealthy, db.Name+" ("+db.Status+")")
+		}
+	}
+	serverStatus := "erişilebilir"
+	if len(servers) > 0 && servers[0].ServerStatus != "" {
+		serverStatus = servers[0].ServerStatus
+	}
+	text := fmt.Sprintf("<b>📊 Sistem Durumu</b>\n\n🤖 Bot: <b>Çalışıyor</b>\n🖥 Sunucu: <b>%s</b>\n✅ Sağlıklı kaynak: <b>%d</b>\n📦 Uygulama/servis: <b>%d</b>\n🗄 Veritabanı: <b>%d</b>\n⏱ Gecikme: <code>%d ms</code>\n🕒 Çalışma süresi: <code>%s</code>\n⚙️ İş parçacıkları: <code>%d</code>", serverStatus, healthy, len(apps), len(databases), time.Since(start).Milliseconds(), time.Since(startTime).Truncate(time.Second), runtime.NumGoroutine())
+	if len(unhealthy) > 0 {
+		text += "\n\n<b>⚠️ Sorunlu Kaynaklar</b>\n• " + strings.Join(unhealthy, "\n• ")
+	}
 	_, err = m.EditText(c, text, &td.EditTextMessageOpts{ParseMode: "HTML"})
 	return err
 }

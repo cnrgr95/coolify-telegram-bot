@@ -164,6 +164,9 @@ func AddAuthorizedUser(id int64, role ...string) error {
 	if len(role) > 0 && role[0] != "" {
 		r = role[0]
 	}
+	if r != "viewer" && r != "operator" && r != "admin" {
+		return fmt.Errorf("rol viewer, operator veya admin olmalı")
+	}
 	found := false
 	for i, u := range store.Users {
 		if u.TelegramID == id {

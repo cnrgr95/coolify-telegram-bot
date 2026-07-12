@@ -13,7 +13,7 @@ const pageSize = 5
 
 func jobsHandler(c *td.Client, msg *td.Message) error {
 	if !config.IsDev(msg.SenderID()) {
-		_, err := msg.ReplyText(c, "🚫 You are not authorized to use this command.", nil)
+		_, err := msg.ReplyText(c, "🚫 Bu komutu kullanma yetkiniz yok.", nil)
 		return err
 	}
 
@@ -30,7 +30,7 @@ func jobsHandler(c *td.Client, msg *td.Message) error {
 func jobsPaginationHandler(c *td.Client, cb *td.UpdateNewCallbackQuery) error {
 	data := cb.DataString()
 	if !config.IsDev(cb.SenderUserId) {
-		_ = cb.Answer(c, 0, true, "🚫 You are not authorized.", "")
+		_ = cb.Answer(c, 0, true, "🚫 Bu işlem için yetkiniz yok.", "")
 		return nil
 	}
 
@@ -52,7 +52,7 @@ func jobsPaginationHandler(c *td.Client, cb *td.UpdateNewCallbackQuery) error {
 func buildJobsMessage(page int) (string, td.ReplyMarkup, error) {
 	tasks, err := database.GetTasks()
 	if err != nil {
-		return "", nil, fmt.Errorf("error fetching tasks: %v", err)
+		return "", nil, fmt.Errorf("görevler alınamadı: %v", err)
 	}
 
 	if len(tasks) == 0 {
@@ -62,12 +62,12 @@ func buildJobsMessage(page int) (string, td.ReplyMarkup, error) {
 	start, end, buttons := Paginate(len(tasks), page, pageSize, "jobs:")
 
 	var sb strings.Builder
-	sb.WriteString(fmt.Sprintf("<b>📅 Zamanlanmış Görevler (Page %d):</b>\n\n", page))
+	sb.WriteString(fmt.Sprintf("<b>📅 Zamanlanmış Görevler (Sayfa %d):</b>\n\n", page))
 
 	for _, task := range tasks[start:end] {
 		sb.WriteString(fmt.Sprintf("🆔 <code>%s</code>\n", task.ID))
-		sb.WriteString(fmt.Sprintf("🏷️ <b>Name:</b> %s\n", task.Name))
-		sb.WriteString(fmt.Sprintf("🔧 <b>Type:</b> %s\n", task.Type))
+		sb.WriteString(fmt.Sprintf("🏷️ <b>Ad:</b> %s\n", task.Name))
+		sb.WriteString(fmt.Sprintf("🔧 <b>Tür:</b> %s\n", task.Type))
 		sb.WriteString(fmt.Sprintf("⏰ <b>Zamanlama:</b> %s\n", task.Schedule))
 		if task.OneTime {
 			sb.WriteString(fmt.Sprintf("⏳ <b>Sonraki Çalışma:</b> %s\n", task.NextRun.Format("2006-01-02 15:04:05")))

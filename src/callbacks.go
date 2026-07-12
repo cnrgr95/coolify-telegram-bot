@@ -532,7 +532,7 @@ func scheduleActionHandler(c *td.Client, cb *td.UpdateNewCallbackQuery) error {
 		Rows: [][]td.InlineKeyboardButton{
 			{
 				{
-					Text: "Hourly",
+					Text: "Her Saat",
 					Type: &td.InlineKeyboardButtonTypeCallback{
 						Data: []byte(fmt.Sprintf("sch_c:%s:%s:every_1h", uuid, actionType)),
 					},
@@ -540,7 +540,7 @@ func scheduleActionHandler(c *td.Client, cb *td.UpdateNewCallbackQuery) error {
 			},
 			{
 				{
-					Text: "Daily",
+					Text: "Her Gün",
 					Type: &td.InlineKeyboardButtonTypeCallback{
 						Data: []byte(fmt.Sprintf("sch_c:%s:%s:every_1d", uuid, actionType)),
 					},
@@ -548,7 +548,7 @@ func scheduleActionHandler(c *td.Client, cb *td.UpdateNewCallbackQuery) error {
 			},
 			{
 				{
-					Text: "Every 2 Days",
+					Text: "2 Günde Bir",
 					Type: &td.InlineKeyboardButtonTypeCallback{
 						Data: []byte(fmt.Sprintf("sch_c:%s:%s:every_2d", uuid, actionType)),
 					},
@@ -556,7 +556,7 @@ func scheduleActionHandler(c *td.Client, cb *td.UpdateNewCallbackQuery) error {
 			},
 			{
 				{
-					Text: "Every 3 Days",
+					Text: "3 Günde Bir",
 					Type: &td.InlineKeyboardButtonTypeCallback{
 						Data: []byte(fmt.Sprintf("sch_c:%s:%s:every_3d", uuid, actionType)),
 					},
@@ -564,7 +564,7 @@ func scheduleActionHandler(c *td.Client, cb *td.UpdateNewCallbackQuery) error {
 			},
 			{
 				{
-					Text: "Weekly",
+					Text: "Haftalık",
 					Type: &td.InlineKeyboardButtonTypeCallback{
 						Data: []byte(fmt.Sprintf("sch_c:%s:%s:every_7d", uuid, actionType)),
 					},
@@ -581,7 +581,7 @@ func scheduleActionHandler(c *td.Client, cb *td.UpdateNewCallbackQuery) error {
 		},
 	}
 
-	_, err := cb.EditMessageText(c, "<b>⏰ Select Zamanla:</b>", &td.EditTextMessageOpts{
+	_, err := cb.EditMessageText(c, "<b>⏰ Zamanlama aralĿını seçin:</b>", &td.EditTextMessageOpts{
 		ParseMode:   "HTML",
 		ReplyMarkup: kb,
 	})

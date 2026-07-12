@@ -6,6 +6,7 @@ import (
 	"fmt"
 	"net/http"
 	"strings"
+	"sync"
 	"time"
 )
 
@@ -24,17 +25,20 @@ func NewClient(baseURL, token string, httpClient *http.Client, ttl time.Duration
 }
 
 type Client struct {
-	BaseURL string
-	Token   string
-	Client  *http.Client
-	cache   *cache
+	BaseURL         string
+	Token           string
+	Client          *http.Client
+	cache           *cache
+	projectMu       sync.Mutex
+	projectCache    map[int64]string
+	projectCachedAt time.Time
 }
 
 func (c *Client) projectNames() map[int64]string {
-	if c.cache != nil {
-		if cached, ok := c.cache.Get("project_names"); ok {
-			return cached.(map[int64]string)
-		}
+	c.projectMu.Lock()
+	defer c.projectMu.Unlock()
+	if c.projectCache != nil && time.Since(c.projectCachedAt) < 5*time.Minute {
+		return c.projectCache
 	}
 	names := map[int64]string{}
 	req, err := http.NewRequest(http.MethodGet, c.BaseURL+"/api/v1/projects", nil)
@@ -69,9 +73,8 @@ func (c *Client) projectNames() map[int64]string {
 			names[environment.ID] = project.Name
 		}
 	}
-	if c.cache != nil {
-		c.cache.Set("project_names", names)
-	}
+	c.projectCache = names
+	c.projectCachedAt = time.Now()
 	return names
 }
 

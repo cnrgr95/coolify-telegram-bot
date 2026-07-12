@@ -15,15 +15,15 @@ import (
 
 func scheduleHandler(c *td.Client, msg *td.Message) error {
 	if !config.IsDev(msg.SenderID()) {
-		_, err := msg.ReplyText(c, "🚫 You are not authorized to use this command.", nil)
+		_, err := msg.ReplyText(c, "🚫 Bu komutu kullanma yetkiniz yok.", nil)
 		return err
 	}
 
 	args := strings.Fields(msg.Text())
 	if len(args) < 3 {
-		_, err := msg.ReplyText(c, "usage: /schedule <name> <schedule_type> [expression/time]\n"+
-			"Types: one_time, every_minute, hourly, daily, weekly, monthly, yearly, cron\n"+
-			"For one_time, use RFC3339 format (e.g., 2023-10-27T10:00:00Z)", &td.SendTextMessageOpts{ParseMode: ""})
+		_, err := msg.ReplyText(c, "Kullanım: /schedule <uygulama> <zamanlama_türü> [ifade/saat]\n"+
+			"Türler: one_time, every_minute, hourly, daily, weekly, monthly, yearly, cron\n"+
+			"Tek seferlik işlem için RFC3339 biçimi kullanın.", nil)
 		return err
 	}
 
@@ -32,7 +32,7 @@ func scheduleHandler(c *td.Client, msg *td.Message) error {
 
 	apps, err := config.Coolify.ListApplications()
 	if err != nil {
-		_, err = msg.ReplyText(c, fmt.Sprintf("❌ Error fetching projects: %v", err), nil)
+		_, err = msg.ReplyText(c, fmt.Sprintf("❌ Projeler alınamadı: %v", err), nil)
 		return err
 	}
 
@@ -45,7 +45,7 @@ func scheduleHandler(c *td.Client, msg *td.Message) error {
 	}
 
 	if uuid == "" {
-		_, err = msg.ReplyText(c, fmt.Sprintf("❌ Project not found with name: %s", name), nil)
+		_, err = msg.ReplyText(c, fmt.Sprintf("❌ Uygulama bulunamadı: %s", name), nil)
 		return err
 	}
 
@@ -59,18 +59,18 @@ func scheduleHandler(c *td.Client, msg *td.Message) error {
 	switch schType {
 	case "one_time":
 		if len(args) < 4 {
-			_, err = msg.ReplyText(c, "❌ Please provide a time for one-time schedule.", nil)
+			_, err = msg.ReplyText(c, "❌ Tek seferlik zamanlama için tarih ve saat girin.", nil)
 			return err
 		}
 		timeStr := args[3]
 		t, err := time.Parse(time.RFC3339, timeStr)
 		if err != nil {
-			_, err = msg.ReplyText(c, "❌ Invalid time format. Use RFC3339 (e.g., 2023-10-27T10:00:00Z)", nil)
+			_, err = msg.ReplyText(c, "❌ Geçersiz tarih biçimi. RFC3339 kullanın.", nil)
 			return err
 		}
 
 		if t.Before(time.Now()) {
-			_, err = msg.ReplyText(c, "❌ Time must be in the future.", nil)
+			_, err = msg.ReplyText(c, "❌ Tarih gelecekte olmalı.", nil)
 			return err
 		}
 
@@ -80,7 +80,7 @@ func scheduleHandler(c *td.Client, msg *td.Message) error {
 
 	case "cron":
 		if len(args) < 4 {
-			_, err = msg.ReplyText(c, "❌ Please provide a cron expression.", nil)
+			_, err = msg.ReplyText(c, "❌ Cron ifadesi girin.", nil)
 			return err
 		}
 
@@ -97,7 +97,7 @@ func scheduleHandler(c *td.Client, msg *td.Message) error {
 			if _, err := time.Parse("15:04", timeStr); err == nil {
 				task.Schedule = "daily_at_" + timeStr
 			} else {
-				_, err = msg.ReplyText(c, "❌ Invalid time format. Use HH:MM (e.g., 06:00)", nil)
+				_, err = msg.ReplyText(c, "❌ Geçersiz saat. SS:DD biçimini kullanın.", nil)
 				return err
 			}
 		} else {
@@ -111,7 +111,7 @@ func scheduleHandler(c *td.Client, msg *td.Message) error {
 				base := parts[0]
 				timeStr := parts[1]
 				if _, err := time.Parse("15:04", timeStr); err != nil {
-					_, err = msg.ReplyText(c, "❌ Invalid time format in schedule. Use HH:MM (e.g., every_1d_at_06:00)", nil)
+					_, err = msg.ReplyText(c, "❌ Zamanlamadaki saat geçersiz. SS:DD biçimini kullanın.", nil)
 					return err
 				}
 
@@ -159,21 +159,21 @@ func scheduleHandler(c *td.Client, msg *td.Message) error {
 			break
 		}
 
-		_, err = msg.ReplyText(c, fmt.Sprintf("❌ Unknown schedule type: %s", schType), nil)
+		_, err = msg.ReplyText(c, fmt.Sprintf("❌ Bilinmeyen zamanlama türü: %s", schType), nil)
 		return err
 	}
 
 	if err := database.AddTask(task); err != nil {
-		_, err = msg.ReplyText(c, fmt.Sprintf("❌ Error saving task: %v", err), nil)
+		_, err = msg.ReplyText(c, fmt.Sprintf("❌ Görev kaydedilemedi: %v", err), nil)
 		return err
 	}
 
 	if err := scheduler.ScheduleTask(task); err != nil {
 		_ = database.DeleteTask(task.ID)
-		_, err = msg.ReplyText(c, fmt.Sprintf("❌ Error scheduling task: %v", err), nil)
+		_, err = msg.ReplyText(c, fmt.Sprintf("❌ Görev zamanlanamadı: %v", err), nil)
 		return err
 	}
 
-	_, err = msg.ReplyText(c, fmt.Sprintf("✅ Task scheduled successfully!\nID: %s", task.ID), nil)
+	_, err = msg.ReplyText(c, fmt.Sprintf("✅ Görev zamanlandı.\nID: %s", task.ID), nil)
 	return err
 }

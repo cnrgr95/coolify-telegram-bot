@@ -8,6 +8,8 @@ type Application struct {
 	Status        string `json:"status"`
 	EnvironmentID int64  `json:"environment_id"`
 	Project       string `json:"-"`
+	LimitsCPUs    string `json:"limits_cpus"`
+	LimitsMemory  string `json:"limits_memory"`
 }
 
 type ApplicationDetail struct {
