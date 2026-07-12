@@ -10,7 +10,7 @@ import (
 	"strings"
 
 	td "github.com/AshokShau/gotdbot"
-	"github.com/google/uuid"
+	uuidpkg "github.com/google/uuid"
 )
 
 func listProjectsHandler(c *td.Client, cb *td.UpdateNewCallbackQuery) error {
@@ -572,7 +572,7 @@ func scheduleCreateHandler(c *td.Client, cb *td.UpdateNewCallbackQuery) error {
 	}
 
 	task := database.ScheduledTask{
-		ID:          uuid.New().String(),
+		ID:          uuidpkg.New().String(),
 		Name:        app.Name,
 		ProjectUUID: uuid,
 		Type:        actionType,

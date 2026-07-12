@@ -10,7 +10,7 @@ import (
 	"time"
 
 	td "github.com/AshokShau/gotdbot"
-	"github.com/google/uuid"
+	uuidpkg "github.com/google/uuid"
 )
 
 func scheduleHandler(c *td.Client, msg *td.Message) error {
@@ -50,7 +50,7 @@ func scheduleHandler(c *td.Client, msg *td.Message) error {
 	}
 
 	task := database.ScheduledTask{
-		ID:          uuid.New().String(),
+		ID:          uuidpkg.New().String(),
 		Name:        name,
 		ProjectUUID: uuid,
 		Type:        "restart",
