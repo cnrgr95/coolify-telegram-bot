@@ -54,6 +54,8 @@ func InitFunc(c *td.Client) error {
 	c.OnUpdateNewCallbackQuery(telegramUserActionHandler, callbackquery.Prefix("tg_del:"))
 	c.OnUpdateNewCallbackQuery(webUserActionHandler, callbackquery.Prefix("web_role:"))
 	c.OnUpdateNewCallbackQuery(webUserActionHandler, callbackquery.Prefix("web_del:"))
+	c.OnUpdateNewCallbackQuery(newUserRoleHandler, callbackquery.Prefix("new_tg_role:"))
+	c.OnUpdateNewCallbackQuery(newUserRoleHandler, callbackquery.Prefix("new_web_role:"))
 
 	return nil
 }

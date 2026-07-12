@@ -32,6 +32,11 @@ type panelData struct {
 	Role          string
 	Message       string
 	Page          string
+	Total         int
+	Healthy       int
+	Issues        int
+	DBCount       int
+	HealthPercent int
 }
 
 type projectGroup struct {
@@ -69,6 +74,7 @@ var panelTemplate = template.Must(template.New("panel").Funcs(template.FuncMap{"
 <div class="hero"><div><div class="muted">COOLIFY CONTROL CENTER</div><h1>Altyapınız tek ekranda.</h1><p class="muted">Uygulamaları ve erişimleri güvenle yönetin.</p></div><div class="pill">● Sistem çevrimiçi</div></div>
 <nav><a href="/">📦 Uygulamalar</a><a href="/resources">🗄 Kaynaklar</a><a href="/status">📊 Sistem Durumu</a>{{if eq .Role "admin"}}<a href="/access">👥 Erişim Yönetimi</a>{{end}}<a href="/logout">Çıkış</a></nav>
 {{if .Message}}<div class="message">{{.Message}}</div>{{end}}
+{{if eq .Page "status"}}<section class="grid"><article class="card"><div class="muted">Toplam Kaynak</div><div style="font-size:34px;font-weight:800">{{.Total}}</div></article><article class="card"><div class="muted">Sağlıklı</div><div style="font-size:34px;font-weight:800;color:var(--ok)">{{.Healthy}}</div></article><article class="card"><div class="muted">Sorunlu</div><div style="font-size:34px;font-weight:800;color:var(--danger)">{{.Issues}}</div></article><article class="card"><div class="muted">Veritabanı</div><div style="font-size:34px;font-weight:800">{{.DBCount}}</div></article></section><section class="section"><div style="display:flex;justify-content:space-between"><b>Genel Sağlık</b><b>{{.HealthPercent}}%</b></div><div style="height:12px;background:#09101f;border-radius:99px;margin-top:12px;overflow:hidden"><div style="height:100%;width:{{.HealthPercent}}%;background:linear-gradient(90deg,#42d392,#78e6bc)"></div></div></section>{{end}}
 {{if or (eq .Page "apps") (eq .Page "status")}}<section id="apps">{{range .Apps}}<div class="section"><h2>🗂 {{.Name}}</h2><div class="grid">{{range .Apps}}<article class="card live-resource" data-id="{{.UUID}}"><div class="app-name">{{.Name}}</div><div class="status">● {{.Status}}</div><div class="url">{{.FQDN}}</div><div class="actions">{{if ne $.Role "viewer"}}<form method="post" action="/action"><input type="hidden" name="uuid" value="{{.UUID}}">{{if not (isService .UUID)}}<button class="primary" name="op" value="deploy">🚀 Dağıt</button><button name="op" value="redeploy">♻️ Redeploy</button>{{end}}<button name="op" value="restart">🔄 Yeniden Başlat</button><button class="danger" name="op" value="stop">⏹ Durdur</button></form>{{end}}{{if not (isService .UUID)}}<a class="btn" href="/logs?uuid={{.UUID}}">📜 Loglar</a>{{end}}</div></article>{{end}}</div></div>{{else}}<div class="card">Uygulama bulunamadı.</div>{{end}}</section>{{end}}
 {{if or (eq .Page "resources") (eq .Page "status")}}<section class="section" id="resources"><h2>🗄 Veritabanları ve Sunucular</h2><div class="grid">{{range .Databases}}<article class="card live-resource" data-id="{{.UUID}}"><div class="app-name">{{.Name}}</div><div class="status">● {{.Status}}</div><div class="muted">{{.DatabaseType}} · {{.Image}}</div><div class="muted">CPU limiti: {{if .LimitsCPUs}}{{.LimitsCPUs}}{{else}}Sınırsız{{end}} · RAM limiti: {{if .LimitsMemory}}{{.LimitsMemory}}{{else}}Sınırsız{{end}}</div></article>{{else}}<div class="card muted">Veritabanı kaydı bulunamadı.</div>{{end}}{{range .Servers}}<article class="card live-resource" data-id="{{.UUID}}"><div class="app-name">🖥 {{.Name}}</div><div class="status">● {{if .Status}}{{.Status}}{{else}}{{.ServerStatus}}{{end}}</div><div class="muted">{{.IP}}</div></article>{{end}}</div><p class="muted">Anlık CPU/RAM grafikleri için Coolify sunucusunda Metrics etkin olmalıdır.</p></section>{{end}}
 {{if and (eq .Role "admin") (eq .Page "access")}}<section class="manage" id="access"><div class="section"><h2>📱 Telegram Yetkileri</h2><p class="muted">Ana yönetici: {{.OwnerID}}</p><form class="form-grid" method="post" action="/telegram-users"><input name="id" inputmode="numeric" placeholder="Telegram ID" required><select name="role"><option value="viewer">Görüntüleyici</option><option value="operator">Operatör</option><option value="admin">Yönetici</option></select><button class="primary" name="op" value="save">Ekle / Güncelle</button></form>{{range .TelegramUsers}}<div class="row"><span><b>{{.TelegramID}}</b> · {{.Role}}</span><form method="post" action="/telegram-users"><input type="hidden" name="id" value="{{.TelegramID}}"><button class="danger" name="op" value="delete">Sil</button></form></div>{{end}}</div>
@@ -182,8 +188,24 @@ func startWebPanel() {
 				message = err.Error()
 			}
 			rows, _ := database.GetAuthorizedUserRecords()
+			total := len(apps) + len(databases)
+			healthy := 0
+			for _, app := range apps {
+				if strings.Contains(app.Status, "healthy") || strings.Contains(app.Status, "running") {
+					healthy++
+				}
+			}
+			for _, item := range databases {
+				if strings.Contains(item.Status, "healthy") || strings.Contains(item.Status, "running") {
+					healthy++
+				}
+			}
+			percent := 0
+			if total > 0 {
+				percent = healthy * 100 / total
+			}
 			w.Header().Set("Content-Type", "text/html; charset=utf-8")
-			_ = panelTemplate.Execute(w, panelData{Apps: groupApplications(apps), Databases: databases, Servers: servers, TelegramUsers: rows, WebUsers: database.GetWebUsers(), OwnerID: config.OwnerID(), Username: username, Role: role, Message: message, Page: page})
+			_ = panelTemplate.Execute(w, panelData{Apps: groupApplications(apps), Databases: databases, Servers: servers, TelegramUsers: rows, WebUsers: database.GetWebUsers(), OwnerID: config.OwnerID(), Username: username, Role: role, Message: message, Page: page, Total: total, Healthy: healthy, Issues: total - healthy, DBCount: len(databases), HealthPercent: percent})
 		}
 	}
 	http.HandleFunc("/resources", wrap("viewer", renderPanel("resources")))

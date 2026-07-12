@@ -8,8 +8,8 @@ type Application struct {
 	Status        string `json:"status"`
 	EnvironmentID int64  `json:"environment_id"`
 	Project       string `json:"-"`
-	LimitsCPUs    string `json:"limits_cpus"`
-	LimitsMemory  string `json:"limits_memory"`
+	LimitsCPUs    any    `json:"limits_cpus"`
+	LimitsMemory  any    `json:"limits_memory"`
 }
 
 type ApplicationDetail struct {
@@ -71,8 +71,8 @@ type Resource struct {
 	Image         string `json:"image"`
 	FQDN          string `json:"fqdn"`
 	IP            string `json:"ip"`
-	LimitsCPUs    string `json:"limits_cpus"`
-	LimitsMemory  string `json:"limits_memory"`
+	LimitsCPUs    any    `json:"limits_cpus"`
+	LimitsMemory  any    `json:"limits_memory"`
 	EnvironmentID int64  `json:"environment_id"`
 	Project       string `json:"-"`
 }

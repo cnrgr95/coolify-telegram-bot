@@ -30,8 +30,22 @@ func startHandler(c *td.Client, msg *td.Message) error {
 
 var pendingInputs = struct {
 	sync.Mutex
-	values map[int64]string
-}{values: map[int64]string{}}
+	values map[int64]pendingInput
+}{values: map[int64]pendingInput{}}
+
+type pendingInput struct{ Kind, First, Second string }
+
+func roleKeyboard(prefix string) *td.ReplyMarkupInlineKeyboard {
+	return &td.ReplyMarkupInlineKeyboard{Rows: [][]td.InlineKeyboardButton{
+		{
+			{Text: "👁 Görüntüleyici", Type: &td.InlineKeyboardButtonTypeCallback{Data: []byte(prefix + ":viewer")}},
+			{Text: "🛠 Operatör", Type: &td.InlineKeyboardButtonTypeCallback{Data: []byte(prefix + ":operator")}},
+		},
+		{
+			{Text: "🛡 Yönetici", Type: &td.InlineKeyboardButtonTypeCallback{Data: []byte(prefix + ":admin")}},
+		},
+	}}
+}
 
 func quickMenuHandler(c *td.Client, msg *td.Message) error {
 	if !config.IsDev(msg.SenderID()) {
@@ -43,39 +57,29 @@ func quickMenuHandler(c *td.Client, msg *td.Message) error {
 	}
 	pendingInputs.Lock()
 	pending := pendingInputs.values[msg.SenderID()]
-	if pending != "" {
-		delete(pendingInputs.values, msg.SenderID())
-	}
 	pendingInputs.Unlock()
-	if pending == "telegram_add" {
-		parts := strings.Fields(text)
-		if len(parts) != 2 {
-			_, err := msg.ReplyText(c, "Geçersiz format. Örnek: <code>123456789 viewer</code>", &td.SendTextMessageOpts{ParseMode: "HTML"})
-			return err
-		}
-		id, err := strconv.ParseInt(parts[0], 10, 64)
-		if err == nil {
-			err = database.AddAuthorizedUser(id, parts[1])
-		}
+	if pending.Kind == "telegram_id" {
+		id, err := strconv.ParseInt(text, 10, 64)
 		if err != nil {
-			_, e := msg.ReplyText(c, "❌ "+err.Error(), nil)
+			_, e := msg.ReplyText(c, "Geçerli bir Telegram ID girin.", nil)
 			return e
 		}
-		_, err = msg.ReplyText(c, "✅ Telegram kullanıcısı eklendi.", nil)
+		pendingInputs.Lock()
+		pendingInputs.values[msg.SenderID()] = pendingInput{Kind: "telegram_role", First: strconv.FormatInt(id, 10)}
+		pendingInputs.Unlock()
+		_, err = msg.ReplyText(c, "Bu kullanıcının rolünü seçin:", &td.SendTextMessageOpts{ReplyMarkup: roleKeyboard("new_tg_role")})
 		return err
 	}
-	if pending == "web_add" {
+	if pending.Kind == "web_credentials" {
 		parts := strings.Fields(text)
-		if len(parts) != 3 {
-			_, err := msg.ReplyText(c, "Geçersiz format. Örnek: <code>kullanici GucluParola123 viewer</code>", &td.SendTextMessageOpts{ParseMode: "HTML"})
+		if len(parts) != 2 {
+			_, err := msg.ReplyText(c, "Kullanıcı adı ve parolayı arada boşlukla yazın.", nil)
 			return err
 		}
-		err := database.AddWebUser(parts[0], parts[1], parts[2])
-		if err != nil {
-			_, e := msg.ReplyText(c, "❌ "+err.Error(), nil)
-			return e
-		}
-		_, err = msg.ReplyText(c, "✅ Web kullanıcısı eklendi.", nil)
+		pendingInputs.Lock()
+		pendingInputs.values[msg.SenderID()] = pendingInput{Kind: "web_role", First: parts[0], Second: parts[1]}
+		pendingInputs.Unlock()
+		_, err := msg.ReplyText(c, "Web kullanıcısının rolünü seçin:", &td.SendTextMessageOpts{ReplyMarkup: roleKeyboard("new_web_role")})
 		return err
 	}
 	switch text {
@@ -90,18 +94,18 @@ func quickMenuHandler(c *td.Client, msg *td.Message) error {
 			return nil
 		}
 		pendingInputs.Lock()
-		pendingInputs.values[msg.SenderID()] = "telegram_add"
+		pendingInputs.values[msg.SenderID()] = pendingInput{Kind: "telegram_id"}
 		pendingInputs.Unlock()
-		_, err := msg.ReplyText(c, "Telegram ID ve rolü yazın.\nÖrnek: <code>123456789 viewer</code>", &td.SendTextMessageOpts{ParseMode: "HTML"})
+		_, err := msg.ReplyText(c, "Eklemek istediğiniz kullanıcının Telegram ID'sini yazın.", nil)
 		return err
 	case "➕ Web Kullanıcısı":
 		if !config.Can(msg.SenderID(), "users") {
 			return nil
 		}
 		pendingInputs.Lock()
-		pendingInputs.values[msg.SenderID()] = "web_add"
+		pendingInputs.values[msg.SenderID()] = pendingInput{Kind: "web_credentials"}
 		pendingInputs.Unlock()
-		_, err := msg.ReplyText(c, "Kullanıcı adı, parola ve rolü yazın.\nÖrnek: <code>caner GucluParola123 operator</code>", &td.SendTextMessageOpts{ParseMode: "HTML"})
+		_, err := msg.ReplyText(c, "Kullanıcı adı ve parolayı yazın.\nÖrnek: <code>caner GucluParola123</code>", &td.SendTextMessageOpts{ParseMode: "HTML"})
 		return err
 	case "📅 Zamanlanmış İşler":
 		return jobsHandler(c, msg)
@@ -347,5 +351,38 @@ func webUserActionHandler(c *td.Client, cb *td.UpdateNewCallbackQuery) error {
 	}
 	text, kb := webUsersMenu()
 	_, err = cb.EditMessageText(c, text, &td.EditTextMessageOpts{ParseMode: "HTML", ReplyMarkup: kb})
+	return err
+}
+
+func newUserRoleHandler(c *td.Client, cb *td.UpdateNewCallbackQuery) error {
+	if !config.Can(cb.SenderUserId, "users") {
+		return cb.Answer(c, 0, true, "Yetkiniz yok.", "")
+	}
+	parts := strings.Split(cb.DataString(), ":")
+	if len(parts) != 2 {
+		return nil
+	}
+	role := parts[1]
+	pendingInputs.Lock()
+	pending := pendingInputs.values[cb.SenderUserId]
+	delete(pendingInputs.values, cb.SenderUserId)
+	pendingInputs.Unlock()
+	var err error
+	if parts[0] == "new_tg_role" && pending.Kind == "telegram_role" {
+		id, e := strconv.ParseInt(pending.First, 10, 64)
+		if e != nil {
+			return e
+		}
+		err = database.AddAuthorizedUser(id, role)
+	} else if parts[0] == "new_web_role" && pending.Kind == "web_role" {
+		err = database.AddWebUser(pending.First, pending.Second, role)
+	} else {
+		return cb.Answer(c, 0, true, "Oturum süresi doldu, ekleme işlemini yeniden başlatın.", "")
+	}
+	if err != nil {
+		_, _ = cb.EditMessageText(c, "❌ "+err.Error(), nil)
+		return nil
+	}
+	_, err = cb.EditMessageText(c, "✅ Kullanıcı başarıyla eklendi.", nil)
 	return err
 }
