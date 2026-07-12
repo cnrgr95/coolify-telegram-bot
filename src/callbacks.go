@@ -15,7 +15,7 @@ import (
 
 func listProjectsHandler(c *td.Client, cb *td.UpdateNewCallbackQuery) error {
 	if !config.IsDev(cb.SenderUserId) {
-		_ = cb.Answer(c, 0, true, "ğŸš« Bu işlem için yetkiniz yok.", "")
+		_ = cb.Answer(c, 0, true, "🚫 Bu işlem için yetkiniz yok.", "")
 		return nil
 	}
 
@@ -27,7 +27,7 @@ func listProjectsHandler(c *td.Client, cb *td.UpdateNewCallbackQuery) error {
 	}
 
 	if len(apps) == 0 {
-		_, _ = cb.EditMessageText(c, "ğŸ˜¶ Uygulama bulunamadı.", nil)
+		_, _ = cb.EditMessageText(c, "😶 Uygulama bulunamadı.", nil)
 		return nil
 	}
 
@@ -44,7 +44,7 @@ func listProjectsHandler(c *td.Client, cb *td.UpdateNewCallbackQuery) error {
 
 	kb := &td.ReplyMarkupInlineKeyboard{}
 	for _, app := range apps[start:end] {
-		text := fmt.Sprintf("ğŸ“¦ %s (%s)", app.Name, app.Status)
+		text := fmt.Sprintf("📦 %s (%s)", app.Name, app.Status)
 		data := "project_menu:" + app.UUID
 
 		kb.Rows = append(kb.Rows, []td.InlineKeyboardButton{
@@ -72,7 +72,7 @@ func listProjectsHandler(c *td.Client, cb *td.UpdateNewCallbackQuery) error {
 		kb.Rows = append(kb.Rows, row)
 	}
 
-	_, err = cb.EditMessageText(c, "<b>ğŸ“‹ Bir uygulama seçin:</b>", &td.EditTextMessageOpts{ParseMode: "HTML", ReplyMarkup: kb})
+	_, err = cb.EditMessageText(c, "<b>📋 Bir uygulama seçin:</b>", &td.EditTextMessageOpts{ParseMode: "HTML", ReplyMarkup: kb})
 	return err
 }
 
@@ -115,22 +115,22 @@ func projectMenuHandler(c *td.Client, cb *td.UpdateNewCallbackQuery) error {
 	}
 	app, err := config.Coolify.GetApplicationByUUID(uuid)
 	if err != nil {
-		_, err = cb.EditMessageText(c, "âŒ Proje yüklenemedi: "+err.Error(), nil)
+		_, err = cb.EditMessageText(c, "❌ Proje yüklenemedi: "+err.Error(), nil)
 		return err
 	}
 
-	text := fmt.Sprintf("<b>ğŸ“¦ %s</b>\nğŸŒ %s\nğŸ“„ Durum: <code>%s</code>", app.Name, app.FQDN, app.Status)
+	text := fmt.Sprintf("<b>📦 %s</b>\n🌐 %s\n📄 Durum: <code>%s</code>", app.Name, app.FQDN, app.Status)
 	kb := &td.ReplyMarkupInlineKeyboard{
 		Rows: [][]td.InlineKeyboardButton{
 			{
 				{
-					Text: "ğŸ”„ Yeniden Başlat",
+					Text: "🔄 Yeniden Başlat",
 					Type: &td.InlineKeyboardButtonTypeCallback{
 						Data: []byte("restart:" + uuid),
 					},
 				},
 				{
-					Text: "ğŸš€ Dağıt",
+					Text: "🚀 Dağıt",
 					Type: &td.InlineKeyboardButtonTypeCallback{
 						Data: []byte("deploy:" + uuid),
 					},
@@ -138,13 +138,13 @@ func projectMenuHandler(c *td.Client, cb *td.UpdateNewCallbackQuery) error {
 			},
 			{
 				{
-					Text: "ğŸ“œ Loglar",
+					Text: "📜 Loglar",
 					Type: &td.InlineKeyboardButtonTypeCallback{
 						Data: []byte("logs:" + uuid),
 					},
 				},
 				{
-					Text: "â„¹ï¸ Durum",
+					Text: "ℹ️ Durum",
 					Type: &td.InlineKeyboardButtonTypeCallback{
 						Data: []byte("status:" + uuid),
 					},
@@ -152,7 +152,7 @@ func projectMenuHandler(c *td.Client, cb *td.UpdateNewCallbackQuery) error {
 			},
 			{
 				{
-					Text: "ğŸ“… Zamanla",
+					Text: "📅 Zamanla",
 					Type: &td.InlineKeyboardButtonTypeCallback{
 						Data: []byte("sch_m:" + uuid),
 					},
@@ -160,13 +160,13 @@ func projectMenuHandler(c *td.Client, cb *td.UpdateNewCallbackQuery) error {
 			},
 			{
 				{
-					Text: "ğŸ›‘ Durdur",
+					Text: "🛑 Durdur",
 					Type: &td.InlineKeyboardButtonTypeCallback{
 						Data: []byte("stop:" + uuid),
 					},
 				},
 				{
-					Text: "âŒ Sil",
+					Text: "❌ Sil",
 					Type: &td.InlineKeyboardButtonTypeCallback{
 						Data: []byte("delete:" + uuid),
 					},
@@ -174,7 +174,7 @@ func projectMenuHandler(c *td.Client, cb *td.UpdateNewCallbackQuery) error {
 			},
 			{
 				{
-					Text: "ğŸ”™ Geri",
+					Text: "🔙 Geri",
 					Type: &td.InlineKeyboardButtonTypeCallback{
 						Data: []byte("list_projects:"),
 					},

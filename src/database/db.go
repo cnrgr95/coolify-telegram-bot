@@ -5,8 +5,11 @@ import (
 	"fmt"
 	"os"
 	"path/filepath"
+	"strings"
 	"sync"
 	"time"
+
+	"golang.org/x/crypto/bcrypt"
 )
 
 type ScheduledTask struct {
@@ -25,9 +28,17 @@ type AuthorizedUser struct {
 	UpdatedAt  time.Time `json:"updated_at"`
 }
 
+type WebUser struct {
+	Username     string    `json:"username"`
+	PasswordHash string    `json:"password_hash"`
+	Role         string    `json:"role"`
+	UpdatedAt    time.Time `json:"updated_at"`
+}
+
 type DataStore struct {
-	Tasks []ScheduledTask  `json:"tasks"`
-	Users []AuthorizedUser `json:"users"`
+	Tasks    []ScheduledTask  `json:"tasks"`
+	Users    []AuthorizedUser `json:"users"`
+	WebUsers []WebUser        `json:"web_users"`
 }
 
 var store DataStore
@@ -58,7 +69,67 @@ func Connect(uri string) error {
 	if store.Users == nil {
 		store.Users = []AuthorizedUser{}
 	}
+	if store.WebUsers == nil {
+		store.WebUsers = []WebUser{}
+	}
 	return nil
+}
+
+func AddWebUser(username, password, role string) error {
+	mu.Lock()
+	defer mu.Unlock()
+	username = strings.TrimSpace(strings.ToLower(username))
+	if username == "" || len(password) < 8 {
+		return fmt.Errorf("kullanıcı adı gerekli ve parola en az 8 karakter olmalı")
+	}
+	if role != "viewer" && role != "operator" && role != "admin" {
+		return fmt.Errorf("geçersiz rol")
+	}
+	hashBytes, err := bcrypt.GenerateFromPassword([]byte(password), bcrypt.DefaultCost)
+	if err != nil {
+		return fmt.Errorf("parola işlenemedi: %w", err)
+	}
+	hash := string(hashBytes)
+	for i := range store.WebUsers {
+		if store.WebUsers[i].Username == username {
+			store.WebUsers[i].PasswordHash, store.WebUsers[i].Role, store.WebUsers[i].UpdatedAt = hash, role, time.Now()
+			return save()
+		}
+	}
+	store.WebUsers = append(store.WebUsers, WebUser{Username: username, PasswordHash: hash, Role: role, UpdatedAt: time.Now()})
+	return save()
+}
+
+func RemoveWebUser(username string) error {
+	mu.Lock()
+	defer mu.Unlock()
+	username = strings.TrimSpace(strings.ToLower(username))
+	users := make([]WebUser, 0, len(store.WebUsers))
+	for _, user := range store.WebUsers {
+		if user.Username != username {
+			users = append(users, user)
+		}
+	}
+	store.WebUsers = users
+	return save()
+}
+
+func AuthenticateWebUser(username, password string) (string, bool) {
+	mu.Lock()
+	defer mu.Unlock()
+	username = strings.TrimSpace(strings.ToLower(username))
+	for _, user := range store.WebUsers {
+		if user.Username == username && bcrypt.CompareHashAndPassword([]byte(user.PasswordHash), []byte(password)) == nil {
+			return user.Role, true
+		}
+	}
+	return "", false
+}
+
+func GetWebUsers() []WebUser {
+	mu.Lock()
+	defer mu.Unlock()
+	return append([]WebUser(nil), store.WebUsers...)
 }
 
 func save() error {

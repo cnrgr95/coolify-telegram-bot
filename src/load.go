@@ -30,6 +30,9 @@ func InitFunc(c *td.Client) error {
 	c.OnCommand("yetki_ekle", addAuthorizedHandler)
 	c.OnCommand("yetki_sil", removeAuthorizedHandler)
 	c.OnCommand("yetkililer", listAuthorizedHandler)
+	c.OnCommand("web_ekle", addWebUserHandler)
+	c.OnCommand("web_sil", removeWebUserHandler)
+	c.OnCommand("web_kullanicilar", listWebUsersHandler)
 
 	// Callbacks
 	c.OnUpdateNewCallbackQuery(jobsPaginationHandler, callbackquery.Prefix("jobs:"))
