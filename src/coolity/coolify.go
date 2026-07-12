@@ -51,8 +51,32 @@ func (c *Client) listResources(path string) ([]Resource, error) {
 	return resources, nil
 }
 
-func (c *Client) ListDatabases() ([]Resource, error) { return c.listResources("/api/v1/databases") }
-func (c *Client) ListServers() ([]Resource, error)   { return c.listResources("/api/v1/servers") }
+func (c *Client) ListDatabases() ([]Resource, error) {
+	resources, err := c.listResources("/api/v1/databases")
+	if err != nil {
+		return nil, err
+	}
+	req, err := http.NewRequest(http.MethodGet, c.BaseURL+"/api/v1/services", nil)
+	if err != nil {
+		return resources, nil
+	}
+	req.Header.Set("Authorization", "Bearer "+c.Token)
+	resp, err := c.Client.Do(req)
+	if err != nil {
+		return resources, nil
+	}
+	defer resp.Body.Close()
+	var services []struct {
+		Databases []Resource `json:"databases"`
+	}
+	if json.NewDecoder(resp.Body).Decode(&services) == nil {
+		for _, service := range services {
+			resources = append(resources, service.Databases...)
+		}
+	}
+	return resources, nil
+}
+func (c *Client) ListServers() ([]Resource, error) { return c.listResources("/api/v1/servers") }
 
 func (c *Client) ListApplications() ([]Application, error) {
 	// Check cache first
@@ -309,14 +333,6 @@ func (c *Client) GetApplicationEnvsByUUID(uuid string) ([]EnvironmentVariable, e
 }
 
 func (c *Client) StartApplicationDeployment(uuid string, force, instantDeploy bool) (*StartDeploymentResponse, error) {
-	cacheKey := fmt.Sprintf("app_start_%s_%v_%v", uuid, force, instantDeploy)
-	if c.cache != nil {
-		if cached, found := c.cache.Get(cacheKey); found {
-			v := cached.(StartDeploymentResponse)
-			return &v, nil
-		}
-	}
-
 	url := fmt.Sprintf("%s/api/v1/applications/%s/start", c.BaseURL, uuid)
 	// Build query parameters
 	query := url + "?"
@@ -355,23 +371,10 @@ func (c *Client) StartApplicationDeployment(uuid string, force, instantDeploy bo
 		return nil, err
 	}
 
-	// Cache the result
-	if c.cache != nil {
-		c.cache.Set(cacheKey, deployment)
-	}
-
 	return &deployment, nil
 }
 
 func (c *Client) StopApplicationByUUID(uuid string) (*StopApplicationResponse, error) {
-	cacheKey := fmt.Sprintf("app_stop_%s", uuid)
-	if c.cache != nil {
-		if cached, found := c.cache.Get(cacheKey); found {
-			v := cached.(StopApplicationResponse)
-			return &v, nil
-		}
-	}
-
 	url := fmt.Sprintf("%s/api/v1/applications/%s/stop", c.BaseURL, uuid)
 
 	req, err := http.NewRequest("GET", url, nil)
@@ -402,23 +405,10 @@ func (c *Client) StopApplicationByUUID(uuid string) (*StopApplicationResponse, e
 		return nil, err
 	}
 
-	// Cache the result
-	if c.cache != nil {
-		c.cache.Set(cacheKey, stopResponse)
-	}
-
 	return &stopResponse, nil
 }
 
 func (c *Client) RestartApplicationByUUID(uuid string) (*StartDeploymentResponse, error) {
-	cacheKey := fmt.Sprintf("app_restart_%s", uuid)
-	if c.cache != nil {
-		if cached, found := c.cache.Get(cacheKey); found {
-			v := cached.(StartDeploymentResponse)
-			return &v, nil
-		}
-	}
-
 	url := fmt.Sprintf("%s/api/v1/applications/%s/restart", c.BaseURL, uuid)
 
 	req, err := http.NewRequest("GET", url, nil)
@@ -447,11 +437,6 @@ func (c *Client) RestartApplicationByUUID(uuid string) (*StartDeploymentResponse
 	err = json.NewDecoder(resp.Body).Decode(&deployment)
 	if err != nil {
 		return nil, err
-	}
-
-	// Cache the result
-	if c.cache != nil {
-		c.cache.Set(cacheKey, deployment)
 	}
 
 	return &deployment, nil

@@ -142,7 +142,7 @@ func InitConfig() error {
 		apiUrl,
 		apiToken,
 		httpClient,
-		30*time.Minute,
+		5*time.Second,
 	)
 
 	// Parse DEV_IDS
