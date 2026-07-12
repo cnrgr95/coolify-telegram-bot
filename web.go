@@ -37,6 +37,49 @@ type panelData struct {
 	Issues        int
 	DBCount       int
 	HealthPercent int
+	Metrics       systemMetrics
+}
+
+type systemMetrics struct {
+	CPU       float64 `json:"cpu"`
+	RAM       float64 `json:"ram"`
+	RAMUsed   uint64  `json:"ram_used"`
+	RAMTotal  uint64  `json:"ram_total"`
+	Available bool    `json:"available"`
+}
+
+func loadSystemMetrics() systemMetrics {
+	base := os.Getenv("SENTINEL_URL")
+	if base == "" {
+		base = "http://host.docker.internal:8000"
+	}
+	client := &http.Client{Timeout: 3 * time.Second}
+	var result systemMetrics
+	if response, err := client.Get(strings.TrimRight(base, "/") + "/api/cpu/current"); err == nil {
+		defer response.Body.Close()
+		var data struct {
+			Percent float64 `json:"percent"`
+		}
+		if json.NewDecoder(response.Body).Decode(&data) == nil {
+			result.CPU = data.Percent
+			result.Available = true
+		}
+	}
+	if response, err := client.Get(strings.TrimRight(base, "/") + "/api/memory/current"); err == nil {
+		defer response.Body.Close()
+		var data struct {
+			UsedPercent float64 `json:"usedPercent"`
+			Used        uint64  `json:"used"`
+			Total       uint64  `json:"total"`
+		}
+		if json.NewDecoder(response.Body).Decode(&data) == nil {
+			result.RAM = data.UsedPercent
+			result.RAMUsed = data.Used
+			result.RAMTotal = data.Total
+			result.Available = true
+		}
+	}
+	return result
 }
 
 type projectGroup struct {
@@ -74,12 +117,12 @@ var panelTemplate = template.Must(template.New("panel").Funcs(template.FuncMap{"
 <div class="hero"><div><div class="muted">COOLIFY CONTROL CENTER</div><h1>Altyapınız tek ekranda.</h1><p class="muted">Uygulamaları ve erişimleri güvenle yönetin.</p></div><div class="pill">● Sistem çevrimiçi</div></div>
 <nav><a href="/">📦 Uygulamalar</a><a href="/resources">🗄 Kaynaklar</a><a href="/status">📊 Sistem Durumu</a>{{if eq .Role "admin"}}<a href="/access">👥 Erişim Yönetimi</a>{{end}}<a href="/logout">Çıkış</a></nav>
 {{if .Message}}<div class="message">{{.Message}}</div>{{end}}
-{{if eq .Page "status"}}<section class="grid"><article class="card"><div class="muted">Toplam Kaynak</div><div style="font-size:34px;font-weight:800">{{.Total}}</div></article><article class="card"><div class="muted">Sağlıklı</div><div style="font-size:34px;font-weight:800;color:var(--ok)">{{.Healthy}}</div></article><article class="card"><div class="muted">Sorunlu</div><div style="font-size:34px;font-weight:800;color:var(--danger)">{{.Issues}}</div></article><article class="card"><div class="muted">Veritabanı</div><div style="font-size:34px;font-weight:800">{{.DBCount}}</div></article></section><section class="section"><div style="display:flex;justify-content:space-between"><b>Genel Sağlık</b><b>{{.HealthPercent}}%</b></div><div style="height:12px;background:#09101f;border-radius:99px;margin-top:12px;overflow:hidden"><div style="height:100%;width:{{.HealthPercent}}%;background:linear-gradient(90deg,#42d392,#78e6bc)"></div></div></section>{{end}}
-{{if or (eq .Page "apps") (eq .Page "status")}}<section id="apps">{{range .Apps}}<div class="section"><h2>🗂 {{.Name}}</h2><div class="grid">{{range .Apps}}<article class="card live-resource" data-id="{{.UUID}}"><div class="app-name">{{.Name}}</div><div class="status">● {{.Status}}</div><div class="url">{{.FQDN}}</div><div class="actions">{{if ne $.Role "viewer"}}<form method="post" action="/action"><input type="hidden" name="uuid" value="{{.UUID}}">{{if not (isService .UUID)}}<button class="primary" name="op" value="deploy">🚀 Dağıt</button><button name="op" value="redeploy">♻️ Redeploy</button>{{end}}<button name="op" value="restart">🔄 Yeniden Başlat</button><button class="danger" name="op" value="stop">⏹ Durdur</button></form>{{end}}{{if not (isService .UUID)}}<a class="btn" href="/logs?uuid={{.UUID}}">📜 Loglar</a>{{end}}</div></article>{{end}}</div></div>{{else}}<div class="card">Uygulama bulunamadı.</div>{{end}}</section>{{end}}
+{{if eq .Page "status"}}<section class="grid"><article class="card"><div class="muted">CPU Kullanımı</div><div id="cpu-value" style="font-size:34px;font-weight:800">{{if .Metrics.Available}}{{printf "%.1f" .Metrics.CPU}}%{{else}}N/A{{end}}</div><div class="status-bar"><div id="cpu-bar" style="width:{{.Metrics.CPU}}%"></div></div></article><article class="card"><div class="muted">RAM Kullanımı</div><div id="ram-value" style="font-size:34px;font-weight:800">{{if .Metrics.Available}}{{printf "%.1f" .Metrics.RAM}}%{{else}}N/A{{end}}</div><div class="status-bar"><div id="ram-bar" style="width:{{.Metrics.RAM}}%"></div></div></article><article class="card"><div class="muted">Disk Kullanımı</div><div style="font-size:34px;font-weight:800">N/A</div><small class="muted">Sentinel anık disk verisi sunmuyor.</small></article><article class="card"><div class="muted">Ağ / İnternet</div><div style="font-size:34px;font-weight:800">N/A</div><small class="muted">Sentinel anık ağ verisi sunmuyor.</small></article></section><section class="grid" style="margin-top:16px"><article class="card"><div class="muted">Toplam Kaynak</div><div style="font-size:28px;font-weight:800">{{.Total}}</div></article><article class="card"><div class="muted">Sağlıklı</div><div style="font-size:28px;font-weight:800;color:var(--ok)">{{.Healthy}}</div></article><article class="card"><div class="muted">Sorunlu</div><div style="font-size:28px;font-weight:800;color:var(--danger)">{{.Issues}}</div></article></section>{{end}}
+{{if eq .Page "apps"}}<section id="apps">{{range .Apps}}<div class="section"><h2>🗂 {{.Name}}</h2><div class="grid">{{range .Apps}}<article class="card live-resource" data-id="{{.UUID}}"><div class="app-name">{{.Name}}</div><div class="status">● {{.Status}}</div><div class="url">{{.FQDN}}</div><details><summary class="btn">İşlemler</summary><div class="actions">{{if ne $.Role "viewer"}}<form method="post" action="/action"><input type="hidden" name="uuid" value="{{.UUID}}">{{if not (isService .UUID)}}<button class="primary" name="op" value="deploy">🚀 Dağıt</button><button name="op" value="redeploy">♻️ Redeploy</button>{{end}}<button name="op" value="restart">🔄 Yeniden Başlat</button><button class="danger" name="op" value="stop">⏹ Durdur</button></form>{{end}}{{if not (isService .UUID)}}<a class="btn" href="/logs?uuid={{.UUID}}">📜 Loglar</a>{{end}}</div></details></article>{{end}}</div></div>{{else}}<div class="card">Uygulama bulunamadı.</div>{{end}}</section>{{end}}
 {{if or (eq .Page "resources") (eq .Page "status")}}<section class="section" id="resources"><h2>🗄 Veritabanları ve Sunucular</h2><div class="grid">{{range .Databases}}<article class="card live-resource" data-id="{{.UUID}}"><div class="app-name">{{.Name}}</div><div class="status">● {{.Status}}</div><div class="muted">{{.DatabaseType}} · {{.Image}}</div><div class="muted">CPU limiti: {{if .LimitsCPUs}}{{.LimitsCPUs}}{{else}}Sınırsız{{end}} · RAM limiti: {{if .LimitsMemory}}{{.LimitsMemory}}{{else}}Sınırsız{{end}}</div></article>{{else}}<div class="card muted">Veritabanı kaydı bulunamadı.</div>{{end}}{{range .Servers}}<article class="card live-resource" data-id="{{.UUID}}"><div class="app-name">🖥 {{.Name}}</div><div class="status">● {{if .Status}}{{.Status}}{{else}}{{.ServerStatus}}{{end}}</div><div class="muted">{{.IP}}</div></article>{{end}}</div><p class="muted">Anlık CPU/RAM grafikleri için Coolify sunucusunda Metrics etkin olmalıdır.</p></section>{{end}}
 {{if and (eq .Role "admin") (eq .Page "access")}}<section class="manage" id="access"><div class="section"><h2>📱 Telegram Yetkileri</h2><p class="muted">Ana yönetici: {{.OwnerID}}</p><form class="form-grid" method="post" action="/telegram-users"><input name="id" inputmode="numeric" placeholder="Telegram ID" required><select name="role"><option value="viewer">Görüntüleyici</option><option value="operator">Operatör</option><option value="admin">Yönetici</option></select><button class="primary" name="op" value="save">Ekle / Güncelle</button></form>{{range .TelegramUsers}}<div class="row"><span><b>{{.TelegramID}}</b> · {{.Role}}</span><form method="post" action="/telegram-users"><input type="hidden" name="id" value="{{.TelegramID}}"><button class="danger" name="op" value="delete">Sil</button></form></div>{{end}}</div>
 <div class="section"><h2>🖥️ Web Kullanıcıları</h2><p class="muted">Panel hesaplarını ve rollerini yönetin.</p><form class="form-grid" method="post" action="/web-users"><input name="username" placeholder="Kullanıcı adı" required><input type="password" name="password" minlength="8" placeholder="Parola (en az 8)" required><select name="role"><option value="viewer">Görüntüleyici</option><option value="operator">Operatör</option><option value="admin">Yönetici</option></select><button class="primary" name="op" value="save">Ekle / Güncelle</button></form>{{range .WebUsers}}<div class="row"><span><b>{{.Username}}</b> · {{.Role}}</span><form method="post" action="/web-users"><input type="hidden" name="username" value="{{.Username}}"><button class="danger" name="op" value="delete">Sil</button></form></div>{{end}}</div></section>{{end}}
-</main><script>let inventory=[...document.querySelectorAll('.live-resource')].map(x=>x.dataset.id).sort().join(',');async function refresh(){try{const r=await fetch('/api/dashboard',{headers:{Accept:'application/json'}});if(!r.ok)return;const d=await r.json();const all=[...d.apps,...d.databases,...d.servers],next=all.map(x=>x.uuid).sort().join(',');if(next!==inventory){location.reload();return}for(const x of all){const card=document.querySelector('[data-id="'+CSS.escape(x.uuid)+'"]');if(!card)continue;const status=card.querySelector('.status');const value=x.status||x.server_status||'bilinmiyor';status.textContent='● '+value;status.style.color=value.includes('healthy')||value.includes('running')?'var(--ok)':'var(--danger)'}}catch(e){}}setInterval(refresh,5000);refresh();</script></body></html>`))
+</main><script>let inventory=[...document.querySelectorAll('.live-resource')].map(x=>x.dataset.id).sort().join(',');async function refresh(){try{const r=await fetch('/api/dashboard',{headers:{Accept:'application/json'}});if(!r.ok)return;const d=await r.json();if(d.metrics&&d.metrics.available){const cpu=document.getElementById('cpu-value'),ram=document.getElementById('ram-value');if(cpu)cpu.textContent=d.metrics.cpu.toFixed(1)+'%';if(ram)ram.textContent=d.metrics.ram.toFixed(1)+'%'}const all=[...d.apps,...d.databases,...d.servers],next=all.map(x=>x.uuid).sort().join(',');if(next!==inventory){location.reload();return}for(const x of all){const card=document.querySelector('[data-id="'+CSS.escape(x.uuid)+'"]');if(!card)continue;const status=card.querySelector('.status');const value=x.status||x.server_status||'bilinmiyor';status.textContent='● '+value;status.style.color=value.includes('healthy')||value.includes('running')?'var(--ok)':'var(--danger)'}}catch(e){}}setInterval(refresh,5000);refresh();</script></body></html>`))
 
 var loginTemplate = template.Must(template.New("login").Parse(`<!doctype html><html lang="tr"><head><meta charset="utf-8"><meta name="viewport" content="width=device-width,initial-scale=1"><title>FL Panel Giriş</title><style>body{margin:0;min-height:100vh;display:grid;place-items:center;background:radial-gradient(circle at 20% 0,#263b76,transparent 40%),#070b16;color:#f4f7ff;font:15px system-ui}.box{width:min(420px,90vw);padding:32px;background:#10182add;border:1px solid #2d3b5c;border-radius:22px;box-shadow:0 30px 90px #0008}h1{font-size:32px;margin:8px 0}p{color:#9ba9c4}input,button{width:100%;box-sizing:border-box;padding:13px;margin-top:11px;border-radius:11px;border:1px solid #334263;background:#0a1120;color:white}button{background:#7868ff;border:0;font-weight:700;cursor:pointer}.error{color:#ff91a2}</style></head><body><form class="box" method="post"><div>⚡ FL PANEL</div><h1>Tekrar hoş geldiniz.</h1><p>Coolify yönetim merkezine giriş yapın.</p>{{if .}}<div class="error">{{.}}</div>{{end}}<input name="username" autocomplete="username" placeholder="Kullanıcı adı" required autofocus><input type="password" name="password" autocomplete="current-password" placeholder="Parola" required><button>Giriş Yap</button></form></body></html>`))
 
@@ -176,7 +219,7 @@ func startWebPanel() {
 		databases, _ := config.Coolify.ListDatabases()
 		servers, _ := config.Coolify.ListServers()
 		w.Header().Set("Content-Type", "application/json; charset=utf-8")
-		_ = json.NewEncoder(w).Encode(map[string]any{"apps": apps, "databases": databases, "servers": servers, "updated_at": time.Now()})
+		_ = json.NewEncoder(w).Encode(map[string]any{"apps": apps, "databases": databases, "servers": servers, "metrics": loadSystemMetrics(), "updated_at": time.Now()})
 	}))
 	renderPanel := func(page string) func(http.ResponseWriter, *http.Request, string, string) {
 		return func(w http.ResponseWriter, r *http.Request, username, role string) {
@@ -205,7 +248,7 @@ func startWebPanel() {
 				percent = healthy * 100 / total
 			}
 			w.Header().Set("Content-Type", "text/html; charset=utf-8")
-			_ = panelTemplate.Execute(w, panelData{Apps: groupApplications(apps), Databases: databases, Servers: servers, TelegramUsers: rows, WebUsers: database.GetWebUsers(), OwnerID: config.OwnerID(), Username: username, Role: role, Message: message, Page: page, Total: total, Healthy: healthy, Issues: total - healthy, DBCount: len(databases), HealthPercent: percent})
+			_ = panelTemplate.Execute(w, panelData{Apps: groupApplications(apps), Databases: databases, Servers: servers, TelegramUsers: rows, WebUsers: database.GetWebUsers(), OwnerID: config.OwnerID(), Username: username, Role: role, Message: message, Page: page, Total: total, Healthy: healthy, Issues: total - healthy, DBCount: len(databases), HealthPercent: percent, Metrics: loadSystemMetrics()})
 		}
 	}
 	http.HandleFunc("/resources", wrap("viewer", renderPanel("resources")))
