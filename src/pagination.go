@@ -1,4 +1,4 @@
-﻿package src
+package src
 
 import "fmt"
 
@@ -50,7 +50,7 @@ func Paginate(totalItems int, currentPage int, pageSize int, callbackPrefix stri
 	for p := startPage; p <= endPage; p++ {
 		text := fmt.Sprintf("%d", p)
 		if p == currentPage {
-			text = fmt.Sprintf("Â· %d Â·", p)
+			text = fmt.Sprintf("· %d ·", p)
 		}
 		buttons = append(buttons, PageButton{Text: text, Data: fmt.Sprintf("%s%d", callbackPrefix, p)})
 	}
@@ -61,4 +61,3 @@ func Paginate(totalItems int, currentPage int, pageSize int, callbackPrefix stri
 
 	return startIndex, endIndex, buttons
 }
-

@@ -30,6 +30,51 @@ type Client struct {
 	cache   *cache
 }
 
+func (c *Client) projectNames() map[int64]string {
+	if c.cache != nil {
+		if cached, ok := c.cache.Get("project_names"); ok {
+			return cached.(map[int64]string)
+		}
+	}
+	names := map[int64]string{}
+	req, err := http.NewRequest(http.MethodGet, c.BaseURL+"/api/v1/projects", nil)
+	if err != nil {
+		return names
+	}
+	req.Header.Set("Authorization", "Bearer "+c.Token)
+	resp, err := c.Client.Do(req)
+	if err != nil {
+		return names
+	}
+	defer resp.Body.Close()
+	var projects []struct{ UUID, Name string }
+	if json.NewDecoder(resp.Body).Decode(&projects) != nil {
+		return names
+	}
+	for _, project := range projects {
+		detailReq, _ := http.NewRequest(http.MethodGet, c.BaseURL+"/api/v1/projects/"+project.UUID, nil)
+		detailReq.Header.Set("Authorization", "Bearer "+c.Token)
+		detailResp, e := c.Client.Do(detailReq)
+		if e != nil {
+			continue
+		}
+		var detail struct {
+			Environments []struct {
+				ID int64 `json:"id"`
+			} `json:"environments"`
+		}
+		_ = json.NewDecoder(detailResp.Body).Decode(&detail)
+		detailResp.Body.Close()
+		for _, environment := range detail.Environments {
+			names[environment.ID] = project.Name
+		}
+	}
+	if c.cache != nil {
+		c.cache.Set("project_names", names)
+	}
+	return names
+}
+
 func (c *Client) listResources(path string) ([]Resource, error) {
 	req, err := http.NewRequest(http.MethodGet, c.BaseURL+path, nil)
 	if err != nil {
@@ -73,6 +118,10 @@ func (c *Client) ListDatabases() ([]Resource, error) {
 		for _, service := range services {
 			resources = append(resources, service.Databases...)
 		}
+	}
+	projects := c.projectNames()
+	for i := range resources {
+		resources[i].Project = projects[resources[i].EnvironmentID]
 	}
 	return resources, nil
 }
@@ -118,10 +167,11 @@ func (c *Client) ListApplications() ([]Application, error) {
 		if sr, e := c.Client.Do(req2); e == nil {
 			defer sr.Body.Close()
 			var services []struct {
-				UUID         string `json:"uuid"`
-				Name         string `json:"name"`
-				Status       string `json:"status"`
-				Applications []struct {
+				UUID          string `json:"uuid"`
+				Name          string `json:"name"`
+				Status        string `json:"status"`
+				EnvironmentID int64  `json:"environment_id"`
+				Applications  []struct {
 					FQDN string `json:"fqdn"`
 				} `json:"applications"`
 			}
@@ -131,9 +181,16 @@ func (c *Client) ListApplications() ([]Application, error) {
 					if len(s.Applications) > 0 {
 						fqdn = s.Applications[0].FQDN
 					}
-					apps = append(apps, Application{UUID: "svc:" + s.UUID, Name: "[Servis] " + s.Name, FQDN: fqdn, Status: s.Status})
+					apps = append(apps, Application{UUID: "svc:" + s.UUID, Name: s.Name, FQDN: fqdn, Status: s.Status, EnvironmentID: s.EnvironmentID})
 				}
 			}
+		}
+	}
+	projects := c.projectNames()
+	for i := range apps {
+		apps[i].Project = projects[apps[i].EnvironmentID]
+		if apps[i].Project == "" {
+			apps[i].Project = "Diğer"
 		}
 	}
 

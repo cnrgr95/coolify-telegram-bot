@@ -122,21 +122,42 @@ func removeAuthorizedHandler(c *td.Client, msg *td.Message) error {
 	return err
 }
 func listAuthorizedHandler(c *td.Client, msg *td.Message) error {
-	if !config.IsDev(msg.SenderID()) {
+	if !config.Can(msg.SenderID(), "users") {
 		return nil
 	}
-	rows, err := database.GetAuthorizedUserRecords()
+	text, keyboard, err := telegramUsersMenu()
 	if err != nil {
 		return err
 	}
-	lines := []string{fmt.Sprintf("👑 <code>%d</code> (Ana yönetici)", config.OwnerID())}
-	for _, u := range rows {
-		if u.TelegramID != config.OwnerID() {
-			lines = append(lines, fmt.Sprintf("👤 <code>%d</code> — %s", u.TelegramID, u.Role))
-		}
-	}
-	_, err = msg.ReplyText(c, "<b>Yetkili Kullanıcılar</b>\n\n"+strings.Join(lines, "\n")+"\n\n<code>/yetki_ekle ID viewer|operator|admin</code>", &td.SendTextMessageOpts{ParseMode: "HTML"})
+	_, err = msg.ReplyText(c, text, &td.SendTextMessageOpts{ParseMode: "HTML", ReplyMarkup: keyboard})
 	return err
+}
+
+func nextRole(role string) string {
+	if role == "viewer" {
+		return "operator"
+	}
+	if role == "operator" {
+		return "admin"
+	}
+	return "viewer"
+}
+
+func telegramUsersMenu() (string, *td.ReplyMarkupInlineKeyboard, error) {
+	rows, err := database.GetAuthorizedUserRecords()
+	if err != nil {
+		return "", nil, err
+	}
+	lines := []string{fmt.Sprintf("👑 <code>%d</code> — owner", config.OwnerID())}
+	keyboard := &td.ReplyMarkupInlineKeyboard{}
+	for _, user := range rows {
+		if user.TelegramID == config.OwnerID() {
+			continue
+		}
+		lines = append(lines, fmt.Sprintf("👤 <code>%d</code> — %s", user.TelegramID, user.Role))
+		keyboard.Rows = append(keyboard.Rows, []td.InlineKeyboardButton{{Text: fmt.Sprintf("🔄 %d: %s", user.TelegramID, user.Role), Type: &td.InlineKeyboardButtonTypeCallback{Data: []byte(fmt.Sprintf("tg_role:%d:%s", user.TelegramID, nextRole(user.Role)))}}, {Text: "🗑 Sil", Type: &td.InlineKeyboardButtonTypeCallback{Data: []byte(fmt.Sprintf("tg_del:%d", user.TelegramID))}}})
+	}
+	return "<b>Telegram Yetkileri</b>\n\n" + strings.Join(lines, "\n") + "\n\nRol düğmesine basarak viewer → operator → admin geçişi yapın.\nYeni hesap: <code>/yetki_ekle ID rol</code>", keyboard, nil
 }
 
 func addWebUserHandler(c *td.Client, msg *td.Message) error {
@@ -176,11 +197,72 @@ func listWebUsersHandler(c *td.Client, msg *td.Message) error {
 	if !config.Can(msg.SenderID(), "users") {
 		return nil
 	}
+	text, keyboard := webUsersMenu()
+	_, err := msg.ReplyText(c, text, &td.SendTextMessageOpts{ParseMode: "HTML", ReplyMarkup: keyboard})
+	return err
+}
+
+func webUsersMenu() (string, *td.ReplyMarkupInlineKeyboard) {
 	lines := []string{"<b>Web Panel Kullanıcıları</b>"}
+	keyboard := &td.ReplyMarkupInlineKeyboard{}
 	for _, user := range database.GetWebUsers() {
 		lines = append(lines, fmt.Sprintf("👤 <code>%s</code> — %s", user.Username, user.Role))
+		keyboard.Rows = append(keyboard.Rows, []td.InlineKeyboardButton{{Text: "🔄 " + user.Username + ": " + user.Role, Type: &td.InlineKeyboardButtonTypeCallback{Data: []byte("web_role:" + user.Username + ":" + nextRole(user.Role))}}, {Text: "🗑 Sil", Type: &td.InlineKeyboardButtonTypeCallback{Data: []byte("web_del:" + user.Username)}}})
 	}
-	lines = append(lines, "", "<code>/web_ekle kullanici parola rol</code>", "<code>/web_sil kullanici</code>")
-	_, err := msg.ReplyText(c, strings.Join(lines, "\n"), &td.SendTextMessageOpts{ParseMode: "HTML"})
+	lines = append(lines, "", "Yeni hesap: <code>/web_ekle kullanici parola rol</code>")
+	return strings.Join(lines, "\n"), keyboard
+}
+
+func telegramUserActionHandler(c *td.Client, cb *td.UpdateNewCallbackQuery) error {
+	if !config.Can(cb.SenderUserId, "users") {
+		return cb.Answer(c, 0, true, "Yetkiniz yok.", "")
+	}
+	parts := strings.Split(cb.DataString(), ":")
+	if len(parts) < 2 {
+		return nil
+	}
+	id, err := strconv.ParseInt(parts[1], 10, 64)
+	if err != nil {
+		return err
+	}
+	if parts[0] == "tg_del" {
+		if id == config.OwnerID() {
+			return cb.Answer(c, 0, true, "Ana yönetici silinemez.", "")
+		}
+		err = database.RemoveAuthorizedUser(id)
+	} else if len(parts) == 3 {
+		err = database.AddAuthorizedUser(id, parts[2])
+	}
+	if err != nil {
+		return err
+	}
+	text, kb, err := telegramUsersMenu()
+	if err != nil {
+		return err
+	}
+	_, err = cb.EditMessageText(c, text, &td.EditTextMessageOpts{ParseMode: "HTML", ReplyMarkup: kb})
+	return err
+}
+
+func webUserActionHandler(c *td.Client, cb *td.UpdateNewCallbackQuery) error {
+	if !config.Can(cb.SenderUserId, "users") {
+		return cb.Answer(c, 0, true, "Yetkiniz yok.", "")
+	}
+	parts := strings.Split(cb.DataString(), ":")
+	if len(parts) < 2 {
+		return nil
+	}
+	username := parts[1]
+	var err error
+	if parts[0] == "web_del" {
+		err = database.RemoveWebUser(username)
+	} else if len(parts) == 3 {
+		err = database.UpdateWebUserRole(username, parts[2])
+	}
+	if err != nil {
+		return err
+	}
+	text, kb := webUsersMenu()
+	_, err = cb.EditMessageText(c, text, &td.EditTextMessageOpts{ParseMode: "HTML", ReplyMarkup: kb})
 	return err
 }

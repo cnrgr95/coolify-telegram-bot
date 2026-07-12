@@ -50,6 +50,10 @@ func InitFunc(c *td.Client) error {
 	c.OnUpdateNewCallbackQuery(statusHandler, callbackquery.Prefix("status:"))
 	c.OnUpdateNewCallbackQuery(stopHandler, callbackquery.Prefix("stop:"))
 	c.OnUpdateNewCallbackQuery(deleteHandler, callbackquery.Prefix("delete:"))
+	c.OnUpdateNewCallbackQuery(telegramUserActionHandler, callbackquery.Prefix("tg_role:"))
+	c.OnUpdateNewCallbackQuery(telegramUserActionHandler, callbackquery.Prefix("tg_del:"))
+	c.OnUpdateNewCallbackQuery(webUserActionHandler, callbackquery.Prefix("web_role:"))
+	c.OnUpdateNewCallbackQuery(webUserActionHandler, callbackquery.Prefix("web_del:"))
 
 	return nil
 }

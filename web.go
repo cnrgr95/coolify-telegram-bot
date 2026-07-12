@@ -10,17 +10,19 @@ import (
 	"log"
 	"net/http"
 	"os"
+	"sort"
 	"strconv"
 	"strings"
 	"sync"
 	"time"
 
 	"coolifymanager/src/config"
+	"coolifymanager/src/coolity"
 	"coolifymanager/src/database"
 )
 
 type panelData struct {
-	Apps          any
+	Apps          []projectGroup
 	TelegramUsers []database.AuthorizedUser
 	WebUsers      []database.WebUser
 	Databases     any
@@ -31,6 +33,33 @@ type panelData struct {
 	Message       string
 }
 
+type projectGroup struct {
+	Name string
+	Apps []coolify.Application
+}
+
+func groupApplications(apps []coolify.Application) []projectGroup {
+	grouped := map[string][]coolify.Application{}
+	for _, app := range apps {
+		name := app.Project
+		if name == "" {
+			name = "Diğer"
+		}
+		grouped[name] = append(grouped[name], app)
+	}
+	names := make([]string, 0, len(grouped))
+	for name := range grouped {
+		names = append(names, name)
+	}
+	sort.Strings(names)
+	groups := make([]projectGroup, 0, len(names))
+	for _, name := range names {
+		sort.Slice(grouped[name], func(i, j int) bool { return grouped[name][i].Name < grouped[name][j].Name })
+		groups = append(groups, projectGroup{Name: name, Apps: grouped[name]})
+	}
+	return groups
+}
+
 var panelTemplate = template.Must(template.New("panel").Funcs(template.FuncMap{"isService": func(uuid string) bool { return strings.HasPrefix(uuid, "svc:") }}).Parse(`<!doctype html>
 <html lang="tr"><head><meta charset="utf-8"><meta name="viewport" content="width=device-width,initial-scale=1">
 <title>FL Panel · Coolify</title><style>
@@ -39,7 +68,7 @@ var panelTemplate = template.Must(template.New("panel").Funcs(template.FuncMap{"
 <div class="hero"><div><div class="muted">COOLIFY CONTROL CENTER</div><h1>Altyapınız tek ekranda.</h1><p class="muted">Uygulamaları ve erişimleri güvenle yönetin.</p></div><div class="pill">● Sistem çevrimiçi</div></div>
 <nav><a href="#apps">📦 Uygulamalar</a><a href="#resources">🗄 Kaynaklar</a>{{if ne .Role "viewer"}}<a href="#access">👥 Erişim Yönetimi</a>{{end}}<a href="/health">♡ Sağlık</a><a href="/logout">Çıkış</a></nav>
 {{if .Message}}<div class="message">{{.Message}}</div>{{end}}
-<section id="apps"><div class="grid">{{range .Apps}}<article class="card live-resource" data-id="{{.UUID}}"><div class="app-name">{{.Name}}</div><div class="status">● {{.Status}}</div><div class="url">{{.FQDN}}</div><div class="actions">{{if ne $.Role "viewer"}}<form method="post" action="/action"><input type="hidden" name="uuid" value="{{.UUID}}">{{if not (isService .UUID)}}<button class="primary" name="op" value="deploy">Dağıt</button><button name="op" value="redeploy">♻️ Redeploy</button>{{end}}<button name="op" value="restart">Yeniden Başlat</button><button class="danger" name="op" value="stop">Durdur</button></form>{{end}}{{if not (isService .UUID)}}<a class="btn" href="/logs?uuid={{.UUID}}">Loglar</a>{{end}}</div></article>{{else}}<div class="card">Uygulama bulunamadı.</div>{{end}}</div></section>
+<section id="apps">{{range .Apps}}<div class="section"><h2>🗂 {{.Name}}</h2><div class="grid">{{range .Apps}}<article class="card live-resource" data-id="{{.UUID}}"><div class="app-name">{{.Name}}</div><div class="status">● {{.Status}}</div><div class="url">{{.FQDN}}</div><div class="actions">{{if ne $.Role "viewer"}}<form method="post" action="/action"><input type="hidden" name="uuid" value="{{.UUID}}">{{if not (isService .UUID)}}<button class="primary" name="op" value="deploy">🚀 Dağıt</button><button name="op" value="redeploy">♻️ Redeploy</button>{{end}}<button name="op" value="restart">🔄 Yeniden Başlat</button><button class="danger" name="op" value="stop">⏹ Durdur</button></form>{{end}}{{if not (isService .UUID)}}<a class="btn" href="/logs?uuid={{.UUID}}">📜 Loglar</a>{{end}}</div></article>{{end}}</div></div>{{else}}<div class="card">Uygulama bulunamadı.</div>{{end}}</section>
 <section class="section" id="resources"><h2>🗄 Veritabanları ve Sunucular</h2><div class="grid">{{range .Databases}}<article class="card live-resource" data-id="{{.UUID}}"><div class="app-name">{{.Name}}</div><div class="status">● {{.Status}}</div><div class="muted">{{.DatabaseType}} · {{.Image}}</div><div class="muted">CPU limiti: {{if .LimitsCPUs}}{{.LimitsCPUs}}{{else}}Sınırsız{{end}} · RAM limiti: {{if .LimitsMemory}}{{.LimitsMemory}}{{else}}Sınırsız{{end}}</div></article>{{else}}<div class="card muted">Veritabanı kaydı bulunamadı.</div>{{end}}{{range .Servers}}<article class="card live-resource" data-id="{{.UUID}}"><div class="app-name">🖥 {{.Name}}</div><div class="status">● {{if .Status}}{{.Status}}{{else}}{{.ServerStatus}}{{end}}</div><div class="muted">{{.IP}}</div></article>{{end}}</div><p class="muted">Anlık CPU/RAM grafikleri için Coolify sunucusunda deneysel Sentinel + Metrics etkinleştirilmelidir. Compose servislerinde Coolify henüz container metriği sunmuyor.</p></section>
 {{if eq .Role "admin"}}<section class="manage" id="access"><div class="section"><h2>📱 Telegram Yetkileri</h2><p class="muted">Ana yönetici: {{.OwnerID}}</p><form class="form-grid" method="post" action="/telegram-users"><input name="id" inputmode="numeric" placeholder="Telegram ID" required><select name="role"><option value="viewer">Görüntüleyici</option><option value="operator">Operatör</option><option value="admin">Yönetici</option></select><button class="primary" name="op" value="save">Ekle / Güncelle</button></form>{{range .TelegramUsers}}<div class="row"><span><b>{{.TelegramID}}</b> · {{.Role}}</span><form method="post" action="/telegram-users"><input type="hidden" name="id" value="{{.TelegramID}}"><button class="danger" name="op" value="delete">Sil</button></form></div>{{end}}</div>
 <div class="section"><h2>🖥️ Web Kullanıcıları</h2><p class="muted">Panel hesaplarını ve rollerini yönetin.</p><form class="form-grid" method="post" action="/web-users"><input name="username" placeholder="Kullanıcı adı" required><input type="password" name="password" minlength="8" placeholder="Parola (en az 8)" required><select name="role"><option value="viewer">Görüntüleyici</option><option value="operator">Operatör</option><option value="admin">Yönetici</option></select><button class="primary" name="op" value="save">Ekle / Güncelle</button></form>{{range .WebUsers}}<div class="row"><span><b>{{.Username}}</b> · {{.Role}}</span><form method="post" action="/web-users"><input type="hidden" name="username" value="{{.Username}}"><button class="danger" name="op" value="delete">Sil</button></form></div>{{end}}</div></section>{{end}}
@@ -152,7 +181,7 @@ func startWebPanel() {
 		}
 		rows, _ := database.GetAuthorizedUserRecords()
 		w.Header().Set("Content-Type", "text/html; charset=utf-8")
-		_ = panelTemplate.Execute(w, panelData{Apps: apps, Databases: databases, Servers: servers, TelegramUsers: rows, WebUsers: database.GetWebUsers(), OwnerID: config.OwnerID(), Username: username, Role: role, Message: message})
+		_ = panelTemplate.Execute(w, panelData{Apps: groupApplications(apps), Databases: databases, Servers: servers, TelegramUsers: rows, WebUsers: database.GetWebUsers(), OwnerID: config.OwnerID(), Username: username, Role: role, Message: message})
 	}))
 	http.HandleFunc("/action", wrap("operator", func(w http.ResponseWriter, r *http.Request, _, _ string) {
 		if r.Method != http.MethodPost {

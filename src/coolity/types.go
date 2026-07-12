@@ -1,11 +1,13 @@
 package coolify
 
 type Application struct {
-	ID     int64  `json:"id"`
-	UUID   string `json:"uuid"`
-	Name   string `json:"name"`
-	FQDN   string `json:"fqdn"`
-	Status string `json:"status"`
+	ID            int64  `json:"id"`
+	UUID          string `json:"uuid"`
+	Name          string `json:"name"`
+	FQDN          string `json:"fqdn"`
+	Status        string `json:"status"`
+	EnvironmentID int64  `json:"environment_id"`
+	Project       string `json:"-"`
 }
 
 type ApplicationDetail struct {
@@ -58,15 +60,17 @@ type StopApplicationResponse struct {
 }
 
 type Resource struct {
-	UUID         string `json:"uuid"`
-	Name         string `json:"name"`
-	Type         string `json:"type"`
-	DatabaseType string `json:"database_type"`
-	Status       string `json:"status"`
-	ServerStatus string `json:"server_status"`
-	Image        string `json:"image"`
-	FQDN         string `json:"fqdn"`
-	IP           string `json:"ip"`
-	LimitsCPUs   string `json:"limits_cpus"`
-	LimitsMemory string `json:"limits_memory"`
+	UUID          string `json:"uuid"`
+	Name          string `json:"name"`
+	Type          string `json:"type"`
+	DatabaseType  string `json:"database_type"`
+	Status        string `json:"status"`
+	ServerStatus  string `json:"server_status"`
+	Image         string `json:"image"`
+	FQDN          string `json:"fqdn"`
+	IP            string `json:"ip"`
+	LimitsCPUs    string `json:"limits_cpus"`
+	LimitsMemory  string `json:"limits_memory"`
+	EnvironmentID int64  `json:"environment_id"`
+	Project       string `json:"-"`
 }

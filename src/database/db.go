@@ -114,6 +114,23 @@ func RemoveWebUser(username string) error {
 	return save()
 }
 
+func UpdateWebUserRole(username, role string) error {
+	mu.Lock()
+	defer mu.Unlock()
+	username = strings.TrimSpace(strings.ToLower(username))
+	if role != "viewer" && role != "operator" && role != "admin" {
+		return fmt.Errorf("geçersiz rol")
+	}
+	for i := range store.WebUsers {
+		if store.WebUsers[i].Username == username {
+			store.WebUsers[i].Role = role
+			store.WebUsers[i].UpdatedAt = time.Now()
+			return save()
+		}
+	}
+	return fmt.Errorf("web kullanıcısı bulunamadı")
+}
+
 func AuthenticateWebUser(username, password string) (string, bool) {
 	mu.Lock()
 	defer mu.Unlock()

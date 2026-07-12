@@ -7,6 +7,7 @@ import (
 	"coolifymanager/src/scheduler"
 	"fmt"
 	"os"
+	"sort"
 	"strings"
 
 	td "github.com/AshokShau/gotdbot"
@@ -30,6 +31,12 @@ func listProjectsHandler(c *td.Client, cb *td.UpdateNewCallbackQuery) error {
 		_, _ = cb.EditMessageText(c, "😶 Uygulama bulunamadı.", nil)
 		return nil
 	}
+	sort.Slice(apps, func(i, j int) bool {
+		if apps[i].Project == apps[j].Project {
+			return apps[i].Name < apps[j].Name
+		}
+		return apps[i].Project < apps[j].Project
+	})
 
 	page := 1
 	cbData := cb.DataString()
@@ -44,7 +51,7 @@ func listProjectsHandler(c *td.Client, cb *td.UpdateNewCallbackQuery) error {
 
 	kb := &td.ReplyMarkupInlineKeyboard{}
 	for _, app := range apps[start:end] {
-		text := fmt.Sprintf("📦 %s (%s)", app.Name, app.Status)
+		text := fmt.Sprintf("📦 %s › %s (%s)", app.Project, app.Name, app.Status)
 		data := "project_menu:" + app.UUID
 
 		kb.Rows = append(kb.Rows, []td.InlineKeyboardButton{
@@ -78,7 +85,7 @@ func listProjectsHandler(c *td.Client, cb *td.UpdateNewCallbackQuery) error {
 
 func projectMenuHandler(c *td.Client, cb *td.UpdateNewCallbackQuery) error {
 	if !config.IsDev(cb.SenderUserId) {
-		_ = cb.Answer(c, 0, true, "ğŸš« Bu işlem için yetkiniz yok.", "")
+		_ = cb.Answer(c, 0, true, "🚫 Bu işlem için yetkiniz yok.", "")
 		return nil
 	}
 
@@ -212,7 +219,7 @@ func projectMenuHandler(c *td.Client, cb *td.UpdateNewCallbackQuery) error {
 
 func restartHandler(c *td.Client, cb *td.UpdateNewCallbackQuery) error {
 	if !config.Can(cb.SenderUserId, "restart") {
-		_ = cb.Answer(c, 0, true, "ğŸš« Bu işlem için yetkiniz yok.", "")
+		_ = cb.Answer(c, 0, true, "🚫 Bu işlem için yetkiniz yok.", "")
 		return nil
 	}
 	_ = cb.Answer(c, 0, false, "İşleniyor...", "")
@@ -233,7 +240,7 @@ func restartHandler(c *td.Client, cb *td.UpdateNewCallbackQuery) error {
 		Rows: [][]td.InlineKeyboardButton{
 			{
 				{
-					Text: "ğŸ”™ Geri",
+					Text: "🔙 Geri",
 					Type: &td.InlineKeyboardButtonTypeCallback{
 						Data: []byte("project_menu:" + uuid),
 					},
@@ -244,18 +251,18 @@ func restartHandler(c *td.Client, cb *td.UpdateNewCallbackQuery) error {
 
 	res, err := config.Coolify.RestartApplicationByUUID(uuid)
 	if err != nil {
-		_, _ = cb.EditMessageText(c, "âŒ Yeniden Başlat failed: "+err.Error(), &td.EditTextMessageOpts{ReplyMarkup: kb})
+		_, _ = cb.EditMessageText(c, "❌ Yeniden Başlat failed: "+err.Error(), &td.EditTextMessageOpts{ReplyMarkup: kb})
 		return nil
 	}
 
-	text := fmt.Sprintf("âœ… Yeniden Başlat queued!\nDağıtım UUID: <code>%s</code>", res.DeploymentUUID)
+	text := fmt.Sprintf("✅ Yeniden Başlat queued!\nDağıtım UUID: <code>%s</code>", res.DeploymentUUID)
 	_, err = cb.EditMessageText(c, text, &td.EditTextMessageOpts{ParseMode: "HTML", ReplyMarkup: kb})
 	return err
 }
 
 func deployHandler(c *td.Client, cb *td.UpdateNewCallbackQuery) error {
 	if !config.Can(cb.SenderUserId, "deploy") {
-		_ = cb.Answer(c, 0, true, "ğŸš« Bu işlem için yetkiniz yok.", "")
+		_ = cb.Answer(c, 0, true, "🚫 Bu işlem için yetkiniz yok.", "")
 		return nil
 	}
 
@@ -268,7 +275,7 @@ func deployHandler(c *td.Client, cb *td.UpdateNewCallbackQuery) error {
 		Rows: [][]td.InlineKeyboardButton{
 			{
 				{
-					Text: "ğŸ”™ Geri",
+					Text: "🔙 Geri",
 					Type: &td.InlineKeyboardButtonTypeCallback{
 						Data: []byte("project_menu:" + uuid),
 					},
@@ -279,11 +286,11 @@ func deployHandler(c *td.Client, cb *td.UpdateNewCallbackQuery) error {
 
 	res, err := config.Coolify.StartApplicationDeployment(uuid, false, false)
 	if err != nil {
-		_, _ = cb.EditMessageText(c, "âŒ Dağıt failed: "+err.Error(), &td.EditTextMessageOpts{ReplyMarkup: kb})
+		_, _ = cb.EditMessageText(c, "❌ Dağıt failed: "+err.Error(), &td.EditTextMessageOpts{ReplyMarkup: kb})
 		return err
 	}
 
-	text := fmt.Sprintf("âœ… Dağıtım queued!\nDağıtım UUID: <code>%s</code>", res.DeploymentUUID)
+	text := fmt.Sprintf("✅ Dağıtım queued!\nDağıtım UUID: <code>%s</code>", res.DeploymentUUID)
 	_, err = cb.EditMessageText(c, text, &td.EditTextMessageOpts{ParseMode: "HTML", ReplyMarkup: kb})
 	return err
 }
@@ -305,7 +312,7 @@ func redeployHandler(c *td.Client, cb *td.UpdateNewCallbackQuery) error {
 
 func logsHandler(c *td.Client, cb *td.UpdateNewCallbackQuery) error {
 	if !config.Can(cb.SenderUserId, "logs") {
-		_ = cb.Answer(c, 0, true, "ğŸš« Bu işlem için yetkiniz yok.", "")
+		_ = cb.Answer(c, 0, true, "🚫 Bu işlem için yetkiniz yok.", "")
 		return nil
 	}
 	_ = cb.Answer(c, 0, false, "İşleniyor...", "")
@@ -316,7 +323,7 @@ func logsHandler(c *td.Client, cb *td.UpdateNewCallbackQuery) error {
 		Rows: [][]td.InlineKeyboardButton{
 			{
 				{
-					Text: "ğŸ”™ Geri",
+					Text: "🔙 Geri",
 					Type: &td.InlineKeyboardButtonTypeCallback{
 						Data: []byte("project_menu:" + uuid),
 					},
@@ -328,19 +335,19 @@ func logsHandler(c *td.Client, cb *td.UpdateNewCallbackQuery) error {
 	_, _ = cb.EditMessageText(c, "İşleniyor...", nil)
 	logsData, err := config.Coolify.GetApplicationLogsByUUID(uuid)
 	if err != nil {
-		_, _ = cb.EditMessageText(c, "âŒ Loglar error: "+err.Error(), &td.EditTextMessageOpts{ReplyMarkup: kb})
+		_, _ = cb.EditMessageText(c, "❌ Loglar error: "+err.Error(), &td.EditTextMessageOpts{ReplyMarkup: kb})
 		return nil
 	}
 
 	tmpFile, err := os.CreateTemp("", "logs-*.txt")
 	if err != nil {
-		_, _ = cb.EditMessageText(c, "âŒ Failed to create temp file: "+err.Error(), nil)
+		_, _ = cb.EditMessageText(c, "❌ Failed to create temp file: "+err.Error(), nil)
 		return err
 	}
 
 	defer os.Remove(tmpFile.Name())
 	if _, err := tmpFile.Write([]byte(logsData)); err != nil {
-		_, _ = cb.EditMessageText(c, "âŒ Failed to write logs: "+err.Error(), nil)
+		_, _ = cb.EditMessageText(c, "❌ Failed to write logs: "+err.Error(), nil)
 		return err
 	}
 
@@ -349,7 +356,7 @@ func logsHandler(c *td.Client, cb *td.UpdateNewCallbackQuery) error {
 	file := tmpFile.Name()
 	_, err = c.EditMessageMedia(cb.ChatId, &td.InputMessageDocument{Document: td.GetInputFile(file)}, cb.MessageId, &td.EditMessageMediaOpts{ReplyMarkup: kb})
 	if err != nil {
-		_, _ = cb.EditMessageText(c, "âŒ Failed to send logs file: "+err.Error(), &td.EditTextMessageOpts{ReplyMarkup: kb})
+		_, _ = cb.EditMessageText(c, "❌ Failed to send logs file: "+err.Error(), &td.EditTextMessageOpts{ReplyMarkup: kb})
 		return fmt.Errorf("edit message media error: %s", err.Error())
 	}
 
@@ -358,7 +365,7 @@ func logsHandler(c *td.Client, cb *td.UpdateNewCallbackQuery) error {
 
 func statusHandler(c *td.Client, cb *td.UpdateNewCallbackQuery) error {
 	if !config.Can(cb.SenderUserId, "view") {
-		_ = cb.Answer(c, 0, true, "ğŸš« Bu işlem için yetkiniz yok.", "")
+		_ = cb.Answer(c, 0, true, "🚫 Bu işlem için yetkiniz yok.", "")
 		return nil
 	}
 	_ = cb.Answer(c, 0, true, "İşleniyor...", "")
@@ -370,7 +377,7 @@ func statusHandler(c *td.Client, cb *td.UpdateNewCallbackQuery) error {
 		Rows: [][]td.InlineKeyboardButton{
 			{
 				{
-					Text: "ğŸ”™ Geri",
+					Text: "🔙 Geri",
 					Type: &td.InlineKeyboardButtonTypeCallback{
 						Data: []byte("project_menu:" + uuid),
 					},
@@ -381,18 +388,18 @@ func statusHandler(c *td.Client, cb *td.UpdateNewCallbackQuery) error {
 
 	app, err := config.Coolify.GetApplicationByUUID(uuid)
 	if err != nil {
-		_, _ = cb.EditMessageText(c, "âŒ Durum hatası: "+err.Error(), &td.EditTextMessageOpts{ReplyMarkup: kb})
+		_, _ = cb.EditMessageText(c, "❌ Durum hatası: "+err.Error(), &td.EditTextMessageOpts{ReplyMarkup: kb})
 		return nil
 	}
 
-	text := fmt.Sprintf("ğŸ“¦ <b>%s</b>\nGüncel Durum: <code>%s</code>", app.Name, app.Status)
+	text := fmt.Sprintf("📦 <b>%s</b>\nGüncel Durum: <code>%s</code>", app.Name, app.Status)
 	_, err = cb.EditMessageText(c, text, &td.EditTextMessageOpts{ParseMode: "HTML", ReplyMarkup: kb})
 	return err
 }
 
 func stopHandler(c *td.Client, cb *td.UpdateNewCallbackQuery) error {
 	if !config.Can(cb.SenderUserId, "stop") {
-		_ = cb.Answer(c, 0, true, "ğŸš« Bu işlem için yetkiniz yok.", "")
+		_ = cb.Answer(c, 0, true, "🚫 Bu işlem için yetkiniz yok.", "")
 		return nil
 	}
 	_ = cb.Answer(c, 0, false, "İşleniyor...", "")
@@ -414,7 +421,7 @@ func stopHandler(c *td.Client, cb *td.UpdateNewCallbackQuery) error {
 		Rows: [][]td.InlineKeyboardButton{
 			{
 				{
-					Text: "ğŸ”™ Geri",
+					Text: "🔙 Geri",
 					Type: &td.InlineKeyboardButtonTypeCallback{
 						Data: []byte("project_menu:" + uuid),
 					},
@@ -424,17 +431,17 @@ func stopHandler(c *td.Client, cb *td.UpdateNewCallbackQuery) error {
 	}
 
 	if err != nil {
-		_, _ = cb.EditMessageText(c, "âŒ Durdur failed: "+err.Error(), &td.EditTextMessageOpts{ReplyMarkup: kb})
+		_, _ = cb.EditMessageText(c, "❌ Durdur failed: "+err.Error(), &td.EditTextMessageOpts{ReplyMarkup: kb})
 		return nil
 	}
 
-	_, err = cb.EditMessageText(c, "ğŸ›‘ "+res.Message, &td.EditTextMessageOpts{ReplyMarkup: kb, ParseMode: "HTML"})
+	_, err = cb.EditMessageText(c, "🛑 "+res.Message, &td.EditTextMessageOpts{ReplyMarkup: kb, ParseMode: "HTML"})
 	return err
 }
 
 func deleteHandler(c *td.Client, cb *td.UpdateNewCallbackQuery) error {
 	if !config.Can(cb.SenderUserId, "delete") {
-		_ = cb.Answer(c, 0, true, "ğŸš« Bu işlem için yetkiniz yok.", "")
+		_ = cb.Answer(c, 0, true, "🚫 Bu işlem için yetkiniz yok.", "")
 		return nil
 	}
 	_ = cb.Answer(c, 0, false, "İşleniyor...", "")
@@ -447,7 +454,7 @@ func deleteHandler(c *td.Client, cb *td.UpdateNewCallbackQuery) error {
 		Rows: [][]td.InlineKeyboardButton{
 			{
 				{
-					Text: "ğŸ”™ Geri",
+					Text: "🔙 Geri",
 					Type: &td.InlineKeyboardButtonTypeCallback{
 						Data: []byte("project_menu:" + uuid),
 					},
@@ -457,17 +464,17 @@ func deleteHandler(c *td.Client, cb *td.UpdateNewCallbackQuery) error {
 	}
 
 	if err != nil {
-		_, err = cb.EditMessageText(c, "âŒ Sil failed: "+err.Error(), &td.EditTextMessageOpts{ReplyMarkup: kb})
+		_, err = cb.EditMessageText(c, "❌ Sil failed: "+err.Error(), &td.EditTextMessageOpts{ReplyMarkup: kb})
 		return nil
 	}
 
-	_, err = cb.EditMessageText(c, "âœ… Application deleted successfully.", &td.EditTextMessageOpts{ReplyMarkup: kb})
+	_, err = cb.EditMessageText(c, "✅ Application deleted successfully.", &td.EditTextMessageOpts{ReplyMarkup: kb})
 	return err
 }
 
 func scheduleMenuHandler(c *td.Client, cb *td.UpdateNewCallbackQuery) error {
 	if !config.Can(cb.SenderUserId, "schedule") {
-		_ = cb.Answer(c, 0, true, "ğŸš« Bu işlem için yetkiniz yok.", "")
+		_ = cb.Answer(c, 0, true, "🚫 Bu işlem için yetkiniz yok.", "")
 		return nil
 	}
 	_ = cb.Answer(c, 0, false, "İşleniyor...", "")
@@ -479,7 +486,7 @@ func scheduleMenuHandler(c *td.Client, cb *td.UpdateNewCallbackQuery) error {
 		Rows: [][]td.InlineKeyboardButton{
 			{
 				{
-					Text: "ğŸ”„ Yeniden Başlat",
+					Text: "🔄 Yeniden Başlat",
 					Type: &td.InlineKeyboardButtonTypeCallback{
 						Data: []byte("sch_a:" + uuid + ":restart"),
 					},
@@ -487,7 +494,7 @@ func scheduleMenuHandler(c *td.Client, cb *td.UpdateNewCallbackQuery) error {
 			},
 			{
 				{
-					Text: "ğŸ”™ Geri",
+					Text: "🔙 Geri",
 					Type: &td.InlineKeyboardButtonTypeCallback{
 						Data: []byte("project_menu:" + uuid),
 					},
@@ -496,7 +503,7 @@ func scheduleMenuHandler(c *td.Client, cb *td.UpdateNewCallbackQuery) error {
 		},
 	}
 
-	_, err := cb.EditMessageText(c, "<b>ğŸ“… İşlem türünü seçin:</b>", &td.EditTextMessageOpts{
+	_, err := cb.EditMessageText(c, "<b>📅 İşlem türünü seçin:</b>", &td.EditTextMessageOpts{
 		ParseMode:   "HTML",
 		ReplyMarkup: kb,
 	})
@@ -505,7 +512,7 @@ func scheduleMenuHandler(c *td.Client, cb *td.UpdateNewCallbackQuery) error {
 
 func scheduleActionHandler(c *td.Client, cb *td.UpdateNewCallbackQuery) error {
 	if !config.Can(cb.SenderUserId, "schedule") {
-		_ = cb.Answer(c, 0, true, "ğŸš« Bu işlem için yetkiniz yok.", "")
+		_ = cb.Answer(c, 0, true, "🚫 Bu işlem için yetkiniz yok.", "")
 		return nil
 	}
 	_ = cb.Answer(c, 0, false, "İşleniyor...", "")
@@ -565,7 +572,7 @@ func scheduleActionHandler(c *td.Client, cb *td.UpdateNewCallbackQuery) error {
 			},
 			{
 				{
-					Text: "ğŸ”™ Geri",
+					Text: "🔙 Geri",
 					Type: &td.InlineKeyboardButtonTypeCallback{
 						Data: []byte("sch_m:" + uuid),
 					},
@@ -574,7 +581,7 @@ func scheduleActionHandler(c *td.Client, cb *td.UpdateNewCallbackQuery) error {
 		},
 	}
 
-	_, err := cb.EditMessageText(c, "<b>â° Select Zamanla:</b>", &td.EditTextMessageOpts{
+	_, err := cb.EditMessageText(c, "<b>⏰ Select Zamanla:</b>", &td.EditTextMessageOpts{
 		ParseMode:   "HTML",
 		ReplyMarkup: kb,
 	})
@@ -583,7 +590,7 @@ func scheduleActionHandler(c *td.Client, cb *td.UpdateNewCallbackQuery) error {
 
 func scheduleCreateHandler(c *td.Client, cb *td.UpdateNewCallbackQuery) error {
 	if !config.Can(cb.SenderUserId, "schedule") {
-		_ = cb.Answer(c, 0, true, "ğŸš« Bu işlem için yetkiniz yok.", "")
+		_ = cb.Answer(c, 0, true, "🚫 Bu işlem için yetkiniz yok.", "")
 		return nil
 	}
 	_ = cb.Answer(c, 0, false, "İşleniyor...", "")
@@ -601,7 +608,7 @@ func scheduleCreateHandler(c *td.Client, cb *td.UpdateNewCallbackQuery) error {
 
 	app, err := config.Coolify.GetApplicationByUUID(uuid)
 	if err != nil {
-		_, _ = cb.EditMessageText(c, "âŒ Failed to get application: "+err.Error(), nil)
+		_, _ = cb.EditMessageText(c, "❌ Failed to get application: "+err.Error(), nil)
 		return nil
 	}
 
@@ -614,13 +621,13 @@ func scheduleCreateHandler(c *td.Client, cb *td.UpdateNewCallbackQuery) error {
 	}
 
 	if err := database.AddTask(task); err != nil {
-		_, _ = cb.EditMessageText(c, "âŒ Failed to save task: "+err.Error(), nil)
+		_, _ = cb.EditMessageText(c, "❌ Failed to save task: "+err.Error(), nil)
 		return nil
 	}
 
 	if err := scheduler.ScheduleTask(task); err != nil {
 		_ = database.DeleteTask(task.ID)
-		_, _ = cb.EditMessageText(c, "âŒ Failed to schedule task: "+err.Error(), nil)
+		_, _ = cb.EditMessageText(c, "❌ Failed to schedule task: "+err.Error(), nil)
 		return nil
 	}
 
@@ -628,7 +635,7 @@ func scheduleCreateHandler(c *td.Client, cb *td.UpdateNewCallbackQuery) error {
 		Rows: [][]td.InlineKeyboardButton{
 			{
 				{
-					Text: "ğŸ”™ Geri",
+					Text: "🔙 Geri",
 					Type: &td.InlineKeyboardButtonTypeCallback{
 						Data: []byte("project_menu:" + uuid),
 					},
@@ -637,7 +644,7 @@ func scheduleCreateHandler(c *td.Client, cb *td.UpdateNewCallbackQuery) error {
 		},
 	}
 
-	_, err = cb.EditMessageText(c, fmt.Sprintf("âœ… Görev başarıyla zamanlandı!\n\nID: <code>%s</code>\nType: %s\nZamanla: %s", task.ID, actionType, schedule), &td.EditTextMessageOpts{
+	_, err = cb.EditMessageText(c, fmt.Sprintf("✅ Görev başarıyla zamanlandı!\n\nID: <code>%s</code>\nType: %s\nZamanla: %s", task.ID, actionType, schedule), &td.EditTextMessageOpts{
 		ParseMode:   "HTML",
 		ReplyMarkup: kb,
 	})

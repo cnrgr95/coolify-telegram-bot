@@ -13,13 +13,13 @@ const pageSize = 5
 
 func jobsHandler(c *td.Client, msg *td.Message) error {
 	if !config.IsDev(msg.SenderID()) {
-		_, err := msg.ReplyText(c, "ğŸš« You are not authorized to use this command.", nil)
+		_, err := msg.ReplyText(c, "🚫 You are not authorized to use this command.", nil)
 		return err
 	}
 
 	text, kb, err := buildJobsMessage(1)
 	if err != nil {
-		_, err = msg.ReplyText(c, "âŒ "+err.Error(), nil)
+		_, err = msg.ReplyText(c, "❌ "+err.Error(), nil)
 		return err
 	}
 
@@ -30,7 +30,7 @@ func jobsHandler(c *td.Client, msg *td.Message) error {
 func jobsPaginationHandler(c *td.Client, cb *td.UpdateNewCallbackQuery) error {
 	data := cb.DataString()
 	if !config.IsDev(cb.SenderUserId) {
-		_ = cb.Answer(c, 0, true, "ğŸš« You are not authorized.", "")
+		_ = cb.Answer(c, 0, true, "🚫 You are not authorized.", "")
 		return nil
 	}
 
@@ -41,7 +41,7 @@ func jobsPaginationHandler(c *td.Client, cb *td.UpdateNewCallbackQuery) error {
 
 	text, kb, err := buildJobsMessage(page)
 	if err != nil {
-		_ = cb.Answer(c, 0, true, "âŒ "+err.Error(), "")
+		_ = cb.Answer(c, 0, true, "❌ "+err.Error(), "")
 		return nil
 	}
 
@@ -56,23 +56,23 @@ func buildJobsMessage(page int) (string, td.ReplyMarkup, error) {
 	}
 
 	if len(tasks) == 0 {
-		return "ğŸ“­ Zamanlanmış görev bulunamadı.", nil, nil
+		return "📭 Zamanlanmış görev bulunamadı.", nil, nil
 	}
 
 	start, end, buttons := Paginate(len(tasks), page, pageSize, "jobs:")
 
 	var sb strings.Builder
-	sb.WriteString(fmt.Sprintf("<b>ğŸ“… Zamanlanmış Görevler (Page %d):</b>\n\n", page))
+	sb.WriteString(fmt.Sprintf("<b>📅 Zamanlanmış Görevler (Page %d):</b>\n\n", page))
 
 	for _, task := range tasks[start:end] {
-		sb.WriteString(fmt.Sprintf("ğŸ†” <code>%s</code>\n", task.ID))
-		sb.WriteString(fmt.Sprintf("ğŸ·ï¸ <b>Name:</b> %s\n", task.Name))
-		sb.WriteString(fmt.Sprintf("ğŸ”§ <b>Type:</b> %s\n", task.Type))
-		sb.WriteString(fmt.Sprintf("â° <b>Zamanlama:</b> %s\n", task.Schedule))
+		sb.WriteString(fmt.Sprintf("🆔 <code>%s</code>\n", task.ID))
+		sb.WriteString(fmt.Sprintf("🏷️ <b>Name:</b> %s\n", task.Name))
+		sb.WriteString(fmt.Sprintf("🔧 <b>Type:</b> %s\n", task.Type))
+		sb.WriteString(fmt.Sprintf("⏰ <b>Zamanlama:</b> %s\n", task.Schedule))
 		if task.OneTime {
-			sb.WriteString(fmt.Sprintf("â³ <b>Sonraki Çalışma:</b> %s\n", task.NextRun.Format("2006-01-02 15:04:05")))
+			sb.WriteString(fmt.Sprintf("⏳ <b>Sonraki Çalışma:</b> %s\n", task.NextRun.Format("2006-01-02 15:04:05")))
 		}
-		sb.WriteString("â–â–â–â–â–â–â–â–â–â–\n")
+		sb.WriteString("——————————\n")
 	}
 
 	kb := &td.ReplyMarkupInlineKeyboard{}
