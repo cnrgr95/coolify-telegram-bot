@@ -62,6 +62,7 @@ func buildJobsMessage(page int) (string, td.ReplyMarkup, error) {
 	start, end, buttons := Paginate(len(tasks), page, pageSize, "jobs:")
 
 	var sb strings.Builder
+	kb := &td.ReplyMarkupInlineKeyboard{}
 	sb.WriteString(fmt.Sprintf("<b>📅 Zamanlanmış Görevler (Sayfa %d):</b>\n\n", page))
 
 	for _, task := range tasks[start:end] {
@@ -73,9 +74,9 @@ func buildJobsMessage(page int) (string, td.ReplyMarkup, error) {
 			sb.WriteString(fmt.Sprintf("⏳ <b>Sonraki Çalışma:</b> %s\n", task.NextRun.Format("2006-01-02 15:04:05")))
 		}
 		sb.WriteString("——————————\n")
+		kb.Rows = append(kb.Rows, []td.InlineKeyboardButton{{Text: "❌ " + task.Name + " görevini iptal et", Type: &td.InlineKeyboardButtonTypeCallback{Data: []byte("job_del:" + task.ID)}}})
 	}
 
-	kb := &td.ReplyMarkupInlineKeyboard{}
 	if len(buttons) > 0 {
 		row := make([]td.InlineKeyboardButton, 0, len(buttons))
 
@@ -92,4 +93,21 @@ func buildJobsMessage(page int) (string, td.ReplyMarkup, error) {
 	}
 
 	return sb.String(), kb, nil
+}
+
+func jobDeleteHandler(c *td.Client, cb *td.UpdateNewCallbackQuery) error {
+	if !config.Can(cb.SenderUserId, "schedule") {
+		return cb.Answer(c, 0, true, "Yetkiniz yok.", "")
+	}
+	id := strings.TrimPrefix(cb.DataString(), "job_del:")
+	_ = scheduler.RemoveTask(id)
+	if err := database.DeleteTask(id); err != nil {
+		return err
+	}
+	text, kb, err := buildJobsMessage(1)
+	if err != nil {
+		return err
+	}
+	_, err = cb.EditMessageText(c, text, &td.EditTextMessageOpts{ParseMode: "HTML", ReplyMarkup: kb})
+	return err
 }

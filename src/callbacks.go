@@ -492,6 +492,9 @@ func scheduleMenuHandler(c *td.Client, cb *td.UpdateNewCallbackQuery) error {
 					},
 				},
 			},
+			{{Text: "⏹ Durdur", Type: &td.InlineKeyboardButtonTypeCallback{Data: []byte("sch_a:" + uuid + ":stop")}}},
+			{{Text: "♻️ Redeploy", Type: &td.InlineKeyboardButtonTypeCallback{Data: []byte("sch_a:" + uuid + ":redeploy")}}},
+			{{Text: "🗑 Sil", Type: &td.InlineKeyboardButtonTypeCallback{Data: []byte("sch_a:" + uuid + ":delete")}}},
 			{
 				{
 					Text: "🔙 Geri",
@@ -501,6 +504,16 @@ func scheduleMenuHandler(c *td.Client, cb *td.UpdateNewCallbackQuery) error {
 				},
 			},
 		},
+	}
+	if !config.Can(cb.SenderUserId, "delete") {
+		filtered := kb.Rows[:0]
+		for _, row := range kb.Rows {
+			if len(row) > 0 && row[0].Text == "🗑 Sil" {
+				continue
+			}
+			filtered = append(filtered, row)
+		}
+		kb.Rows = filtered
 	}
 
 	_, err := cb.EditMessageText(c, "<b>📅 İşlem türünü seçin:</b>", &td.EditTextMessageOpts{
@@ -526,6 +539,10 @@ func scheduleActionHandler(c *td.Client, cb *td.UpdateNewCallbackQuery) error {
 	}
 	uuid := parts[0]
 	actionType := parts[1]
+	if actionType == "delete" && !config.Can(cb.SenderUserId, "delete") {
+		_ = cb.Answer(c, 0, true, "Silme işlemi için admin yetkisi gerekir.", "")
+		return nil
+	}
 
 	// Common intervals
 	kb := &td.ReplyMarkupInlineKeyboard{

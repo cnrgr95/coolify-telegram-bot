@@ -49,37 +49,42 @@ type systemMetrics struct {
 }
 
 func loadSystemMetrics() systemMetrics {
-	base := os.Getenv("SENTINEL_URL")
-	if base == "" {
-		base = "http://host.docker.internal:8000"
+	bases := []string{os.Getenv("SENTINEL_URL")}
+	if bases[0] == "" {
+		bases = []string{"http://host.docker.internal:8000", "http://host.docker.internal:8888", "http://coolify-sentinel:8888"}
 	}
 	client := &http.Client{Timeout: 3 * time.Second}
-	var result systemMetrics
-	if response, err := client.Get(strings.TrimRight(base, "/") + "/api/cpu/current"); err == nil {
-		defer response.Body.Close()
-		var data struct {
-			Percent float64 `json:"percent"`
+	for _, base := range bases {
+		var result systemMetrics
+		if response, err := client.Get(strings.TrimRight(base, "/") + "/api/cpu/current"); err == nil {
+			var data struct {
+				Percent float64 `json:"percent"`
+			}
+			if json.NewDecoder(response.Body).Decode(&data) == nil {
+				result.CPU = data.Percent
+				result.Available = true
+			}
+			response.Body.Close()
 		}
-		if json.NewDecoder(response.Body).Decode(&data) == nil {
-			result.CPU = data.Percent
-			result.Available = true
+		if response, err := client.Get(strings.TrimRight(base, "/") + "/api/memory/current"); err == nil {
+			var data struct {
+				UsedPercent float64 `json:"usedPercent"`
+				Used        uint64  `json:"used"`
+				Total       uint64  `json:"total"`
+			}
+			if json.NewDecoder(response.Body).Decode(&data) == nil {
+				result.RAM = data.UsedPercent
+				result.RAMUsed = data.Used
+				result.RAMTotal = data.Total
+				result.Available = true
+			}
+			response.Body.Close()
+		}
+		if result.Available {
+			return result
 		}
 	}
-	if response, err := client.Get(strings.TrimRight(base, "/") + "/api/memory/current"); err == nil {
-		defer response.Body.Close()
-		var data struct {
-			UsedPercent float64 `json:"usedPercent"`
-			Used        uint64  `json:"used"`
-			Total       uint64  `json:"total"`
-		}
-		if json.NewDecoder(response.Body).Decode(&data) == nil {
-			result.RAM = data.UsedPercent
-			result.RAMUsed = data.Used
-			result.RAMTotal = data.Total
-			result.Available = true
-		}
-	}
-	return result
+	return systemMetrics{}
 }
 
 type projectGroup struct {
@@ -118,7 +123,7 @@ var panelTemplate = template.Must(template.New("panel").Funcs(template.FuncMap{"
 <nav><a href="/">📦 Uygulamalar</a><a href="/resources">🗄 Kaynaklar</a><a href="/status">📊 Sistem Durumu</a>{{if eq .Role "admin"}}<a href="/access">👥 Erişim Yönetimi</a>{{end}}<a href="/logout">Çıkış</a></nav>
 {{if .Message}}<div class="message">{{.Message}}</div>{{end}}
 {{if eq .Page "status"}}<section class="grid"><article class="card"><div class="muted">CPU Kullanımı</div><div id="cpu-value" style="font-size:34px;font-weight:800">{{if .Metrics.Available}}{{printf "%.1f" .Metrics.CPU}}%{{else}}N/A{{end}}</div><div class="status-bar"><div id="cpu-bar" style="width:{{.Metrics.CPU}}%"></div></div></article><article class="card"><div class="muted">RAM Kullanımı</div><div id="ram-value" style="font-size:34px;font-weight:800">{{if .Metrics.Available}}{{printf "%.1f" .Metrics.RAM}}%{{else}}N/A{{end}}</div><div class="status-bar"><div id="ram-bar" style="width:{{.Metrics.RAM}}%"></div></div></article><article class="card"><div class="muted">Disk Kullanımı</div><div style="font-size:34px;font-weight:800">N/A</div><small class="muted">Sentinel anık disk verisi sunmuyor.</small></article><article class="card"><div class="muted">Ağ / İnternet</div><div style="font-size:34px;font-weight:800">N/A</div><small class="muted">Sentinel anık ağ verisi sunmuyor.</small></article></section><section class="grid" style="margin-top:16px"><article class="card"><div class="muted">Toplam Kaynak</div><div style="font-size:28px;font-weight:800">{{.Total}}</div></article><article class="card"><div class="muted">Sağlıklı</div><div style="font-size:28px;font-weight:800;color:var(--ok)">{{.Healthy}}</div></article><article class="card"><div class="muted">Sorunlu</div><div style="font-size:28px;font-weight:800;color:var(--danger)">{{.Issues}}</div></article></section>{{end}}
-{{if eq .Page "apps"}}<section id="apps">{{range .Apps}}<div class="section"><h2>🗂 {{.Name}}</h2><div class="grid">{{range .Apps}}<article class="card live-resource" data-id="{{.UUID}}"><div class="app-name">{{.Name}}</div><div class="status">● {{.Status}}</div><div class="url">{{.FQDN}}</div><details><summary class="btn">İşlemler</summary><div class="actions">{{if ne $.Role "viewer"}}<form method="post" action="/action"><input type="hidden" name="uuid" value="{{.UUID}}">{{if not (isService .UUID)}}<button class="primary" name="op" value="deploy">🚀 Dağıt</button><button name="op" value="redeploy">♻️ Redeploy</button>{{end}}<button name="op" value="restart">🔄 Yeniden Başlat</button><button class="danger" name="op" value="stop">⏹ Durdur</button></form>{{end}}{{if not (isService .UUID)}}<a class="btn" href="/logs?uuid={{.UUID}}">📜 Loglar</a>{{end}}</div></details></article>{{end}}</div></div>{{else}}<div class="card">Uygulama bulunamadı.</div>{{end}}</section>{{end}}
+{{if eq .Page "apps"}}<section id="apps">{{range .Apps}}<div class="section"><h2>🗂 {{.Name}}</h2><div class="grid">{{range .Apps}}<article class="card live-resource" data-id="{{.UUID}}"><div class="app-name">{{.Name}}</div><div class="status">● {{.Status}}</div><div class="url">{{.FQDN}}</div><div class="actions">{{if ne $.Role "viewer"}}<form method="post" action="/action"><input type="hidden" name="uuid" value="{{.UUID}}">{{if not (isService .UUID)}}<button class="primary" name="op" value="deploy">🚀 Dağıt</button><button name="op" value="redeploy">♻️ Redeploy</button>{{end}}<button name="op" value="restart">🔄 Yeniden Başlat</button><button class="danger" name="op" value="stop">⏹ Durdur</button></form>{{end}}{{if not (isService .UUID)}}<a class="btn" href="/logs?uuid={{.UUID}}">📜 Loglar</a>{{end}}</div></article>{{end}}</div></div>{{else}}<div class="card">Uygulama bulunamadı.</div>{{end}}</section>{{end}}
 {{if or (eq .Page "resources") (eq .Page "status")}}<section class="section" id="resources"><h2>🗄 Veritabanları ve Sunucular</h2><div class="grid">{{range .Databases}}<article class="card live-resource" data-id="{{.UUID}}"><div class="app-name">{{.Name}}</div><div class="status">● {{.Status}}</div><div class="muted">{{.DatabaseType}} · {{.Image}}</div><div class="muted">CPU limiti: {{if .LimitsCPUs}}{{.LimitsCPUs}}{{else}}Sınırsız{{end}} · RAM limiti: {{if .LimitsMemory}}{{.LimitsMemory}}{{else}}Sınırsız{{end}}</div></article>{{else}}<div class="card muted">Veritabanı kaydı bulunamadı.</div>{{end}}{{range .Servers}}<article class="card live-resource" data-id="{{.UUID}}"><div class="app-name">🖥 {{.Name}}</div><div class="status">● {{if .Status}}{{.Status}}{{else}}{{.ServerStatus}}{{end}}</div><div class="muted">{{.IP}}</div></article>{{end}}</div><p class="muted">Anlık CPU/RAM grafikleri için Coolify sunucusunda Metrics etkin olmalıdır.</p></section>{{end}}
 {{if and (eq .Role "admin") (eq .Page "access")}}<section class="manage" id="access"><div class="section"><h2>📱 Telegram Yetkileri</h2><p class="muted">Ana yönetici: {{.OwnerID}}</p><form class="form-grid" method="post" action="/telegram-users"><input name="id" inputmode="numeric" placeholder="Telegram ID" required><select name="role"><option value="viewer">Görüntüleyici</option><option value="operator">Operatör</option><option value="admin">Yönetici</option></select><button class="primary" name="op" value="save">Ekle / Güncelle</button></form>{{range .TelegramUsers}}<div class="row"><span><b>{{.TelegramID}}</b> · {{.Role}}</span><form method="post" action="/telegram-users"><input type="hidden" name="id" value="{{.TelegramID}}"><button class="danger" name="op" value="delete">Sil</button></form></div>{{end}}</div>
 <div class="section"><h2>🖥️ Web Kullanıcıları</h2><p class="muted">Panel hesaplarını ve rollerini yönetin.</p><form class="form-grid" method="post" action="/web-users"><input name="username" placeholder="Kullanıcı adı" required><input type="password" name="password" minlength="8" placeholder="Parola (en az 8)" required><select name="role"><option value="viewer">Görüntüleyici</option><option value="operator">Operatör</option><option value="admin">Yönetici</option></select><button class="primary" name="op" value="save">Ekle / Güncelle</button></form>{{range .WebUsers}}<div class="row"><span><b>{{.Username}}</b> · {{.Role}}</span><form method="post" action="/web-users"><input type="hidden" name="username" value="{{.Username}}"><button class="danger" name="op" value="delete">Sil</button></form></div>{{end}}</div></section>{{end}}
@@ -315,7 +320,7 @@ func startWebPanel() {
 			http.Error(w, err.Error(), 500)
 			return
 		}
-		http.Redirect(w, r, "/#access", 303)
+		http.Redirect(w, r, "/access", 303)
 	}))
 	http.HandleFunc("/web-users", wrap("admin", func(w http.ResponseWriter, r *http.Request, _, _ string) {
 		var err error
@@ -328,7 +333,7 @@ func startWebPanel() {
 			http.Error(w, err.Error(), 400)
 			return
 		}
-		http.Redirect(w, r, "/#access", 303)
+		http.Redirect(w, r, "/access", 303)
 	}))
 	port := os.Getenv("PORT")
 	if port == "" {

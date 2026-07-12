@@ -201,14 +201,29 @@ func parseSchedule(schedule string, t time.Time) string {
 func executeTask(task database.ScheduledTask) {
 	log.Printf("Executing task '%s' (%v) for project %s", task.Name, task.ID, task.ProjectUUID)
 
-	if task.Type == "restart" {
+	switch task.Type {
+	case "restart":
 		_, err := config.Coolify.RestartApplicationByUUID(task.ProjectUUID)
 		if err != nil {
 			log.Printf("Error restarting project %s (Task: %s): %v", task.ProjectUUID, task.Name, err)
 		} else {
 			log.Printf("Successfully restarted project %s (Task: %s)", task.ProjectUUID, task.Name)
 		}
-	} else {
+	case "stop":
+		_, err := config.Coolify.StopApplicationByUUID(task.ProjectUUID)
+		if err != nil {
+			log.Printf("Error stopping project %s: %v", task.ProjectUUID, err)
+		}
+	case "redeploy":
+		_, err := config.Coolify.StartApplicationDeployment(task.ProjectUUID, true, false)
+		if err != nil {
+			log.Printf("Error redeploying project %s: %v", task.ProjectUUID, err)
+		}
+	case "delete":
+		if err := config.Coolify.DeleteApplicationByUUID(task.ProjectUUID); err != nil {
+			log.Printf("Error deleting project %s: %v", task.ProjectUUID, err)
+		}
+	default:
 		log.Printf("Unknown task type: %s (Task: %s)", task.Type, task.Name)
 	}
 

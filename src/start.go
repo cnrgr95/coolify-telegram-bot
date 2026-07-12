@@ -20,9 +20,10 @@ func startHandler(c *td.Client, msg *td.Message) error {
 	}
 	menu := &td.ReplyMarkupShowKeyboard{IsPersistent: true, ResizeKeyboard: true, InputFieldPlaceholder: "Hızlı menüden bir işlem seçin", Rows: [][]td.KeyboardButton{
 		{{Text: "📦 Uygulamalar", Type: &td.KeyboardButtonTypeText{}}, {Text: "📊 Sistem Durumu", Type: &td.KeyboardButtonTypeText{}}},
+		{{Text: "🗄 Veritabanları", Type: &td.KeyboardButtonTypeText{}}, {Text: "📅 Zamanlanmış İşler", Type: &td.KeyboardButtonTypeText{}}},
 		{{Text: "👥 Telegram Yetkileri", Type: &td.KeyboardButtonTypeText{}}, {Text: "🖥 Web Kullanıcıları", Type: &td.KeyboardButtonTypeText{}}},
 		{{Text: "➕ Telegram Kullanıcısı", Type: &td.KeyboardButtonTypeText{}}, {Text: "➕ Web Kullanıcısı", Type: &td.KeyboardButtonTypeText{}}},
-		{{Text: "📅 Zamanlanmış İşler", Type: &td.KeyboardButtonTypeText{}}, {Text: "🌐 Web Panel", Type: &td.KeyboardButtonTypeText{}}},
+		{{Text: "🌐 Web Panel", Type: &td.KeyboardButtonTypeText{}}},
 	}}
 	_, err := msg.ReplyText(c, "Hoş geldiniz. Yapmak istediğiniz işlemi aşağıdaki hızlı menüden seçin.", &td.SendTextMessageOpts{ReplyMarkup: menu})
 	return err
@@ -109,6 +110,8 @@ func quickMenuHandler(c *td.Client, msg *td.Message) error {
 		return err
 	case "📅 Zamanlanmış İşler":
 		return jobsHandler(c, msg)
+	case "🗄 Veritabanları":
+		return databasesHandler(c, msg)
 	case "🌐 Web Panel":
 		_, err := msg.ReplyText(c, "Web paneli: https://tg.flpanel.cloud", nil)
 		return err
@@ -118,6 +121,28 @@ func quickMenuHandler(c *td.Client, msg *td.Message) error {
 		return err
 	}
 	return nil
+}
+
+func databasesHandler(c *td.Client, msg *td.Message) error {
+	items, err := config.Coolify.ListDatabases()
+	if err != nil {
+		_, e := msg.ReplyText(c, "❌ Veritabanları alınamadı: "+err.Error(), nil)
+		return e
+	}
+	if len(items) == 0 {
+		_, e := msg.ReplyText(c, "📭 Veritabanı bulunamadı.", nil)
+		return e
+	}
+	lines := []string{"<b>🗄 Veritabanları</b>"}
+	for _, item := range items {
+		project := item.Project
+		if project == "" {
+			project = "Diğer"
+		}
+		lines = append(lines, fmt.Sprintf("\n<b>%s › %s</b>\nDurum: <code>%s</code>\nİmaj: <code>%s</code>", project, item.Name, item.Status, item.Image))
+	}
+	_, err = msg.ReplyText(c, strings.Join(lines, "\n"), &td.SendTextMessageOpts{ParseMode: "HTML"})
+	return err
 }
 
 func pingHandler(c *td.Client, msg *td.Message) error {

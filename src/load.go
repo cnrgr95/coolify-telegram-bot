@@ -19,6 +19,7 @@ func InitFunc(c *td.Client) error {
 	if err := scheduler.Start(); err != nil {
 		return fmt.Errorf("scheduler start error: %s", err.Error())
 	}
+	go monitorResourceChanges(c)
 
 	// Commands
 	c.OnCommand("start", startHandler)
@@ -38,6 +39,7 @@ func InitFunc(c *td.Client) error {
 
 	// Callbacks
 	c.OnUpdateNewCallbackQuery(jobsPaginationHandler, callbackquery.Prefix("jobs:"))
+	c.OnUpdateNewCallbackQuery(jobDeleteHandler, callbackquery.Prefix("job_del:"))
 	c.OnUpdateNewCallbackQuery(listProjectsHandler, callbackquery.Prefix("list_projects"))
 	c.OnUpdateNewCallbackQuery(projectMenuHandler, callbackquery.Prefix("project_menu:"))
 	c.OnUpdateNewCallbackQuery(scheduleMenuHandler, callbackquery.Prefix("sch_m:"))

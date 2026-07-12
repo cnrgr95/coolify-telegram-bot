@@ -255,3 +255,23 @@ func Can(userID int64, action string) bool {
 	}
 	return false
 }
+
+func AdminIDs() []int64 {
+	seen := map[int64]bool{}
+	ids := []int64{}
+	for _, id := range devIDs {
+		if !seen[id] {
+			seen[id] = true
+			ids = append(ids, id)
+		}
+	}
+	if users, err := database.GetAuthorizedUserRecords(); err == nil {
+		for _, user := range users {
+			if user.Role == "admin" && !seen[user.TelegramID] {
+				seen[user.TelegramID] = true
+				ids = append(ids, user.TelegramID)
+			}
+		}
+	}
+	return ids
+}
