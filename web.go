@@ -20,6 +20,8 @@ import (
 	"coolifymanager/src/config"
 	"coolifymanager/src/coolity"
 	"coolifymanager/src/database"
+	"coolifymanager/src/scheduler"
+	uid "github.com/google/uuid"
 )
 
 type panelData struct {
@@ -39,6 +41,7 @@ type panelData struct {
 	DBCount       int
 	HealthPercent int
 	Metrics       systemMetrics
+	Tasks         []database.ScheduledTask
 }
 
 type systemMetrics struct {
@@ -115,16 +118,40 @@ func groupApplications(apps []coolify.Application) []projectGroup {
 	return groups
 }
 
-var panelTemplate = template.Must(template.New("panel").Funcs(template.FuncMap{"isService": func(uuid string) bool { return strings.HasPrefix(uuid, "svc:") }}).Parse(`<!doctype html>
+func webTaskType(value string) string {
+	labels := map[string]string{"restart": "Yeniden Başlat", "redeploy": "Redeploy", "stop": "Durdur", "delete": "Sil"}
+	if label := labels[value]; label != "" {
+		return label
+	}
+	return value
+}
+
+func webTaskSchedule(task database.ScheduledTask) string {
+	if task.OneTime {
+		return "Tek seferlik"
+	}
+	labels := map[string]string{"every_1h": "Saatlik", "every_24h": "Günlük", "every_168h": "Haftalık"}
+	if label := labels[task.Schedule]; label != "" {
+		return label
+	}
+	return task.Schedule
+}
+
+var panelTemplate = template.Must(template.New("panel").Funcs(template.FuncMap{
+	"isService":    func(uuid string) bool { return strings.HasPrefix(uuid, "svc:") },
+	"taskType":     webTaskType,
+	"taskSchedule": webTaskSchedule,
+}).Parse(`<!doctype html>
 <html lang="tr"><head><meta charset="utf-8"><meta name="viewport" content="width=device-width,initial-scale=1">
 <title>FL Panel · Coolify</title><style>
 :root{--bg:#070b16;--panel:#10182a;--line:#25314b;--text:#f2f5fb;--muted:#91a0bb;--brand:#7868ff;--ok:#42d392;--danger:#ef5c70}*{box-sizing:border-box}body{margin:0;background:radial-gradient(circle at 15% 0,#172447 0,transparent 35%),var(--bg);color:var(--text);font:14px Inter,system-ui,sans-serif}header{position:sticky;top:0;z-index:2;display:flex;justify-content:space-between;align-items:center;padding:18px 5vw;background:#070b16dd;backdrop-filter:blur(16px);border-bottom:1px solid var(--line)}.brand{font-size:19px;font-weight:800}.pill{padding:7px 11px;border:1px solid var(--line);border-radius:99px;color:var(--muted)}main{max-width:1280px;margin:auto;padding:34px 5vw}.hero{display:flex;justify-content:space-between;gap:20px;align-items:end;margin-bottom:28px}h1{font-size:clamp(28px,5vw,48px);margin:0}.muted{color:var(--muted)}nav{display:flex;gap:8px;margin:22px 0;flex-wrap:wrap}nav a,.btn,button{color:white;background:#1a2440;border:1px solid #303d5d;border-radius:10px;padding:10px 13px;text-decoration:none;cursor:pointer}.primary{background:var(--brand);border-color:var(--brand)}.danger{background:#381b27;border-color:#6b2b3d;color:#ff9aaa}.grid{display:grid;grid-template-columns:repeat(auto-fit,minmax(285px,1fr));gap:15px}.card,.section{background:linear-gradient(145deg,#121b30,#0e1526);border:1px solid var(--line);border-radius:17px;padding:18px;box-shadow:0 16px 50px #0004}.section{margin-top:24px}.app-name{font-size:17px;font-weight:750}.status{color:var(--ok);margin:9px 0}.url{color:#94b8ff;word-break:break-all;min-height:20px}.actions{display:flex;gap:7px;flex-wrap:wrap;margin-top:14px}form{margin:0}.manage{display:grid;grid-template-columns:1fr 1fr;gap:18px}.form-grid{display:grid;grid-template-columns:repeat(auto-fit,minmax(150px,1fr));gap:9px;margin:14px 0}input,select{width:100%;background:#0a1120;color:white;border:1px solid var(--line);border-radius:9px;padding:11px}.row{display:flex;justify-content:space-between;align-items:center;border-top:1px solid var(--line);padding:11px 2px}.message{padding:13px 16px;border-radius:10px;background:#1c2945;margin-bottom:18px}@media(max-width:760px){.manage{grid-template-columns:1fr}.hero{display:block}header{padding:14px 4vw}}
 </style></head><body><header><div class="brand">⚡ FL Panel</div><div class="pill">👤 {{.Username}} · {{.Role}}</div></header><main>
 <div class="hero"><div><div class="muted">COOLIFY CONTROL CENTER</div><h1>Altyapınız tek ekranda.</h1><p class="muted">Uygulamaları ve erişimleri güvenle yönetin.</p></div><div class="pill">● Sistem çevrimiçi</div></div>
-<nav><a href="/">📦 Uygulamalar</a><a href="/resources">🗄 Kaynaklar</a><a href="/status">📊 Sistem Durumu</a>{{if eq .Role "admin"}}<a href="/access">👥 Erişim Yönetimi</a>{{end}}<a href="/logout">Çıkış</a></nav>
+<nav><a href="/">📦 Uygulamalar</a><a href="/resources">🗄 Kaynaklar</a><a href="/status">📊 Sistem Durumu</a>{{if ne .Role "viewer"}}<a href="/schedules">📅 Zamanlanmış Görevler</a>{{end}}{{if eq .Role "admin"}}<a href="/access">👥 Erişim Yönetimi</a>{{end}}<a href="/logout">Çıkış</a></nav>
 {{if .Message}}<div class="message">{{.Message}}</div>{{end}}
 {{if eq .Page "status"}}<section class="grid"><article class="card"><div class="muted">CPU Kullanımı</div><div id="cpu-value" style="font-size:34px;font-weight:800">{{if .Metrics.Available}}{{printf "%.1f" .Metrics.CPU}}%{{else}}N/A{{end}}</div><div class="status-bar"><div id="cpu-bar" style="width:{{.Metrics.CPU}}%"></div></div></article><article class="card"><div class="muted">RAM Kullanımı</div><div id="ram-value" style="font-size:34px;font-weight:800">{{if .Metrics.Available}}{{printf "%.1f" .Metrics.RAM}}%{{else}}N/A{{end}}</div><div class="status-bar"><div id="ram-bar" style="width:{{.Metrics.RAM}}%"></div></div></article><article class="card"><div class="muted">Disk Kullanımı</div><div style="font-size:34px;font-weight:800">N/A</div><small class="muted">Sentinel anık disk verisi sunmuyor.</small></article><article class="card"><div class="muted">Ağ / İnternet</div><div style="font-size:34px;font-weight:800">N/A</div><small class="muted">Sentinel anık ağ verisi sunmuyor.</small></article></section><section class="grid" style="margin-top:16px"><article class="card"><div class="muted">Toplam Kaynak</div><div style="font-size:28px;font-weight:800">{{.Total}}</div></article><article class="card"><div class="muted">Sağlıklı</div><div style="font-size:28px;font-weight:800;color:var(--ok)">{{.Healthy}}</div></article><article class="card"><div class="muted">Sorunlu</div><div style="font-size:28px;font-weight:800;color:var(--danger)">{{.Issues}}</div></article></section>{{end}}
-{{if eq .Page "apps"}}<section id="apps">{{range .Apps}}<div class="section"><h2>🗂 {{.Name}}</h2><div class="grid">{{range .Apps}}<article class="card live-resource" data-id="{{.UUID}}"><div class="app-name">{{.Name}}</div><div class="status">● {{.Status}}</div><div class="url">{{.FQDN}}</div><div class="actions">{{if ne $.Role "viewer"}}<form method="post" action="/action"><input type="hidden" name="uuid" value="{{.UUID}}">{{if not (isService .UUID)}}<button class="primary" name="op" value="deploy">🚀 Dağıt</button><button name="op" value="redeploy">♻️ Redeploy</button>{{end}}<button name="op" value="restart">🔄 Yeniden Başlat</button><button class="danger" name="op" value="stop">⏹ Durdur</button></form>{{end}}{{if not (isService .UUID)}}<a class="btn" href="/logs?uuid={{.UUID}}">📜 Loglar</a>{{end}}</div></article>{{end}}</div></div>{{else}}<div class="card">Uygulama bulunamadı.</div>{{end}}</section>{{end}}
+{{if eq .Page "apps"}}<section id="apps">{{range .Apps}}<div class="section"><h2>🗂 {{.Name}}</h2><div class="grid">{{range .Apps}}<article class="card live-resource" data-id="{{.UUID}}"><div class="app-name">{{.Name}}</div><div class="status">● {{.Status}}</div><div class="url">{{.FQDN}}</div><div class="actions">{{if ne $.Role "viewer"}}<form method="post" action="/action"><input type="hidden" name="uuid" value="{{.UUID}}">{{if not (isService .UUID)}}<button class="primary" name="op" value="deploy">🚀 Dağıt</button><button name="op" value="redeploy">♻️ Redeploy</button>{{end}}<button name="op" value="restart">🔄 Yeniden Başlat</button><button class="danger" name="op" value="stop">⏹ Durdur</button>{{if and (eq $.Role "admin") (not (isService .UUID))}}<button class="danger" name="op" value="delete" onclick="return confirm('Bu uygulamayı kalıcı olarak silmek istediğinize emin misiniz?')">🗑 Sil</button>{{end}}</form>{{end}}{{if not (isService .UUID)}}<a class="btn" href="/logs?uuid={{.UUID}}">📜 Loglar</a>{{end}}</div></article>{{end}}</div></div>{{else}}<div class="card">Uygulama bulunamadı.</div>{{end}}</section>{{end}}
+{{if eq .Page "schedules"}}<section class="section"><h2>📅 Yeni Zamanlanmış Görev</h2><p class="muted">İşlem, ilk çalışma zamanı ve tekrar biçimini seçin. Durdur ve Sil yalnızca tek sefer çalıştırılabilir.</p><form class="form-grid" method="post" action="/schedules"><select name="uuid" required><option value="">Uygulama seçin</option>{{range .Apps}}{{range .Apps}}{{if not (isService .UUID)}}<option value="{{.UUID}}">{{.Name}}</option>{{end}}{{end}}{{end}}</select><select name="action" required><option value="restart">Yeniden Başlat</option><option value="redeploy">Redeploy</option><option value="stop">Durdur</option>{{if eq .Role "admin"}}<option value="delete">Sil</option>{{end}}</select><select name="repeat" required><option value="once">Tek seferlik</option><option value="hourly">Saatlik</option><option value="daily">Günlük</option><option value="weekly">Haftalık</option></select><input type="datetime-local" name="run_at" required><button class="primary">Görevi Kaydet</button></form></section><section class="section"><h2>Aktif Görevler</h2>{{range .Tasks}}<div class="row"><span><b>{{.Name}}</b> · {{taskType .Type}} · {{taskSchedule .}} · {{.NextRun.Format "02.01.2006 15:04"}}</span><form method="post" action="/schedules"><input type="hidden" name="task_id" value="{{.ID}}"><button class="danger" name="op" value="delete">İptal Et</button></form></div>{{else}}<div class="card muted">Aktif zamanlanmış görev bulunmuyor.</div>{{end}}</section>{{end}}
 {{if or (eq .Page "resources") (eq .Page "status")}}<section class="section" id="resources"><h2>🗄 Veritabanları ve Sunucular</h2><div class="grid">{{range .Databases}}<article class="card live-resource" data-id="{{.UUID}}"><div class="app-name">{{.Name}}</div><div class="status">● {{.Status}}</div><div class="muted">{{.DatabaseType}} · {{.Image}}</div><div class="muted">CPU limiti: {{if .LimitsCPUs}}{{.LimitsCPUs}}{{else}}Sınırsız{{end}} · RAM limiti: {{if .LimitsMemory}}{{.LimitsMemory}}{{else}}Sınırsız{{end}}</div></article>{{else}}<div class="card muted">Veritabanı kaydı bulunamadı.</div>{{end}}{{range .Servers}}<article class="card live-resource" data-id="{{.UUID}}"><div class="app-name">🖥 {{.Name}}</div><div class="status">● {{if .Status}}{{.Status}}{{else}}{{.ServerStatus}}{{end}}</div><div class="muted">{{.IP}}</div></article>{{end}}</div><p class="muted">Anlık CPU/RAM grafikleri için Coolify sunucusunda Metrics etkin olmalıdır.</p></section>{{end}}
 {{if and (eq .Role "admin") (eq .Page "access")}}<section class="manage" id="access"><div class="section"><h2>📱 Telegram Yetkileri</h2><p class="muted">Ana yönetici: {{.OwnerID}}</p><form class="form-grid" method="post" action="/telegram-users"><input name="id" inputmode="numeric" placeholder="Telegram ID" required><select name="role"><option value="viewer">Görüntüleyici</option><option value="operator">Operatör</option><option value="admin">Yönetici</option></select><button class="primary" name="op" value="save">Ekle / Güncelle</button></form>{{range .TelegramUsers}}<div class="row"><span><b>{{.TelegramID}}</b> · {{.Role}}</span><form method="post" action="/telegram-users"><input type="hidden" name="id" value="{{.TelegramID}}"><button class="danger" name="op" value="delete">Sil</button></form></div>{{end}}</div>
 <div class="section"><h2>🖥️ Web Kullanıcıları</h2><p class="muted">Panel hesaplarını ve rollerini yönetin.</p><form class="form-grid" method="post" action="/web-users"><input name="username" placeholder="Kullanıcı adı" required><input type="password" name="password" minlength="8" placeholder="Parola (en az 8)" required><select name="role"><option value="viewer">Görüntüleyici</option><option value="operator">Operatör</option><option value="admin">Yönetici</option></select><button class="primary" name="op" value="save">Ekle / Güncelle</button></form>{{range .WebUsers}}<div class="row"><span><b>{{.Username}}</b> · {{.Role}}</span><form method="post" action="/web-users"><input type="hidden" name="username" value="{{.Username}}"><button class="danger" name="op" value="delete">Sil</button></form></div>{{end}}</div></section>{{end}}
@@ -281,6 +308,8 @@ func startWebPanel() {
 				message = err.Error()
 			}
 			rows, _ := database.GetAuthorizedUserRecords()
+			tasks, _ := database.GetTasks()
+			sort.Slice(tasks, func(i, j int) bool { return tasks[i].NextRun.Before(tasks[j].NextRun) })
 			total := len(apps) + len(databases)
 			healthy := 0
 			for _, app := range apps {
@@ -298,14 +327,74 @@ func startWebPanel() {
 				percent = healthy * 100 / total
 			}
 			w.Header().Set("Content-Type", "text/html; charset=utf-8")
-			_ = panelTemplate.Execute(w, panelData{Apps: groupApplications(apps), Databases: databases, Servers: servers, TelegramUsers: rows, WebUsers: database.GetWebUsers(), OwnerID: config.OwnerID(), Username: username, Role: role, Message: message, Page: page, Total: total, Healthy: healthy, Issues: total - healthy, DBCount: len(databases), HealthPercent: percent, Metrics: loadSystemMetrics()})
+			_ = panelTemplate.Execute(w, panelData{Apps: groupApplications(apps), Databases: databases, Servers: servers, TelegramUsers: rows, WebUsers: database.GetWebUsers(), OwnerID: config.OwnerID(), Username: username, Role: role, Message: message, Page: page, Total: total, Healthy: healthy, Issues: total - healthy, DBCount: len(databases), HealthPercent: percent, Metrics: loadSystemMetrics(), Tasks: tasks})
 		}
 	}
 	http.HandleFunc("/resources", wrap("viewer", renderPanel("resources")))
 	http.HandleFunc("/status", wrap("viewer", renderPanel("status")))
+	http.HandleFunc("/schedules", wrap("operator", func(w http.ResponseWriter, r *http.Request, username, role string) {
+		if r.Method == http.MethodGet {
+			renderPanel("schedules")(w, r, username, role)
+			return
+		}
+		if r.FormValue("op") == "delete" {
+			id := r.FormValue("task_id")
+			_ = scheduler.RemoveTask(id)
+			if err := database.DeleteTask(id); err != nil {
+				http.Error(w, err.Error(), http.StatusInternalServerError)
+				return
+			}
+			http.Redirect(w, r, "/schedules", http.StatusSeeOther)
+			return
+		}
+		action, repeat := r.FormValue("action"), r.FormValue("repeat")
+		if action == "delete" && role != "admin" {
+			http.Error(w, "Silme işlemi için yönetici yetkisi gerekir", http.StatusForbidden)
+			return
+		}
+		if (action == "stop" || action == "delete") && repeat != "once" {
+			http.Error(w, "Durdur ve Sil yalnızca tek seferlik zamanlanabilir", http.StatusBadRequest)
+			return
+		}
+		location, locationErr := time.LoadLocation("Europe/Istanbul")
+		if locationErr != nil {
+			location = time.Local
+		}
+		runAt, err := time.ParseInLocation("2006-01-02T15:04", r.FormValue("run_at"), location)
+		if err != nil || !runAt.After(time.Now()) {
+			http.Error(w, "Çalışma zamanı gelecekte olmalıdır", http.StatusBadRequest)
+			return
+		}
+		app, err := config.Coolify.GetApplicationByUUID(r.FormValue("uuid"))
+		if err != nil {
+			http.Error(w, err.Error(), http.StatusBadRequest)
+			return
+		}
+		schedules := map[string]string{"hourly": "every_1h", "daily": "every_24h", "weekly": "every_168h"}
+		task := database.ScheduledTask{ID: uid.New().String(), Name: app.Name, ProjectUUID: app.UUID, Type: action, NextRun: runAt}
+		if repeat == "once" {
+			task.OneTime, task.Schedule = true, "one_time"
+		} else {
+			task.Schedule = schedules[repeat]
+		}
+		if task.Schedule == "" {
+			http.Error(w, "Geçersiz tekrar biçimi", http.StatusBadRequest)
+			return
+		}
+		if err := database.AddTask(task); err != nil {
+			http.Error(w, err.Error(), http.StatusInternalServerError)
+			return
+		}
+		if err := scheduler.ScheduleTask(task); err != nil {
+			_ = database.DeleteTask(task.ID)
+			http.Error(w, err.Error(), http.StatusInternalServerError)
+			return
+		}
+		http.Redirect(w, r, "/schedules", http.StatusSeeOther)
+	}))
 	http.HandleFunc("/access", wrap("admin", renderPanel("access")))
 	http.HandleFunc("/", wrap("viewer", renderPanel("apps")))
-	http.HandleFunc("/action", wrap("operator", func(w http.ResponseWriter, r *http.Request, _, _ string) {
+	http.HandleFunc("/action", wrap("operator", func(w http.ResponseWriter, r *http.Request, _, role string) {
 		if r.Method != http.MethodPost {
 			http.Error(w, "Geçersiz yöntem", 405)
 			return
@@ -327,6 +416,12 @@ func startWebPanel() {
 				_, err = config.Coolify.RestartApplicationByUUID(id)
 			case "stop":
 				_, err = config.Coolify.StopApplicationByUUID(id)
+			case "delete":
+				if role != "admin" {
+					http.Error(w, "Silme işlemi için yönetici yetkisi gerekir", http.StatusForbidden)
+					return
+				}
+				err = config.Coolify.DeleteApplicationByUUID(id)
 			default:
 				err = fmt.Errorf("geçersiz işlem")
 			}
