@@ -20,6 +20,7 @@ import (
 	"coolifymanager/src/config"
 	"coolifymanager/src/coolity"
 	"coolifymanager/src/database"
+	"coolifymanager/src/monitoring"
 	"coolifymanager/src/scheduler"
 	uid "github.com/google/uuid"
 )
@@ -44,78 +45,10 @@ type panelData struct {
 	Tasks         []database.ScheduledTask
 }
 
-type systemMetrics struct {
-	CPU       float64 `json:"cpu"`
-	RAM       float64 `json:"ram"`
-	RAMUsed   uint64  `json:"ram_used"`
-	RAMTotal  uint64  `json:"ram_total"`
-	Available bool    `json:"available"`
-	Source    string  `json:"source,omitempty"`
-	Error     string  `json:"error,omitempty"`
-}
+type systemMetrics = monitoring.Metrics
 
 func loadSystemMetrics() systemMetrics {
-	bases := []string{os.Getenv("SENTINEL_URL")}
-	if bases[0] == "" {
-		bases = []string{"http://host.docker.internal:8000", "http://host.docker.internal:8888", "http://coolify-sentinel:8888"}
-	}
-	client := &http.Client{Timeout: 3 * time.Second}
-	token := os.Getenv("SENTINEL_TOKEN")
-	lastError := "Sentinel bağlantısı kurulamadı"
-	for _, base := range bases {
-		var result systemMetrics
-		result.Source = base
-		request, _ := http.NewRequest(http.MethodGet, strings.TrimRight(base, "/")+"/api/cpu/current", nil)
-		if token != "" {
-			request.Header.Set("Authorization", "Bearer "+token)
-		}
-		if response, err := client.Do(request); err == nil {
-			if response.StatusCode == http.StatusUnauthorized {
-				lastError = "Sentinel kimlik doğrulaması başarısız"
-			} else if response.StatusCode != http.StatusOK {
-				lastError = fmt.Sprintf("Sentinel CPU endpointi HTTP %d döndürdü", response.StatusCode)
-			}
-			var data struct {
-				Percent float64 `json:"percent"`
-			}
-			if response.StatusCode == http.StatusOK && json.NewDecoder(response.Body).Decode(&data) == nil {
-				result.CPU = data.Percent
-				result.Available = true
-			}
-			response.Body.Close()
-		} else if err != nil {
-			lastError = "Sentinel CPU endpointine erişilemiyor: " + err.Error()
-		}
-		request, _ = http.NewRequest(http.MethodGet, strings.TrimRight(base, "/")+"/api/memory/current", nil)
-		if token != "" {
-			request.Header.Set("Authorization", "Bearer "+token)
-		}
-		if response, err := client.Do(request); err == nil {
-			if response.StatusCode == http.StatusUnauthorized {
-				lastError = "Sentinel kimlik doğrulaması başarısız"
-			} else if response.StatusCode != http.StatusOK {
-				lastError = fmt.Sprintf("Sentinel RAM endpointi HTTP %d döndürdü", response.StatusCode)
-			}
-			var data struct {
-				UsedPercent float64 `json:"usedPercent"`
-				Used        uint64  `json:"used"`
-				Total       uint64  `json:"total"`
-			}
-			if response.StatusCode == http.StatusOK && json.NewDecoder(response.Body).Decode(&data) == nil {
-				result.RAM = data.UsedPercent
-				result.RAMUsed = data.Used
-				result.RAMTotal = data.Total
-				result.Available = true
-			}
-			response.Body.Close()
-		} else if err != nil {
-			lastError = "Sentinel RAM endpointine erişilemiyor: " + err.Error()
-		}
-		if result.Available {
-			return result
-		}
-	}
-	return systemMetrics{Error: lastError}
+	return monitoring.Load()
 }
 
 type projectGroup struct {
@@ -176,7 +109,7 @@ var panelTemplate = template.Must(template.New("panel").Funcs(template.FuncMap{
 <div class="hero"><div><div class="muted">COOLIFY CONTROL CENTER</div><h1>Altyapınız tek ekranda.</h1><p class="muted">Uygulamaları ve erişimleri güvenle yönetin.</p></div><div class="pill">● Sistem çevrimiçi</div></div>
 <nav><a href="/">📦 Uygulamalar</a><a href="/resources">🗄 Kaynaklar</a><a href="/status">📊 Sistem Durumu</a>{{if ne .Role "viewer"}}<a href="/schedules">📅 Zamanlanmış Görevler</a>{{end}}{{if eq .Role "admin"}}<a href="/access">👥 Erişim Yönetimi</a>{{end}}<a href="/logout">Çıkış</a></nav>
 {{if .Message}}<div class="message">{{.Message}}</div>{{end}}
-{{if eq .Page "status"}}<section class="grid"><article class="card"><div class="muted">CPU Kullanımı</div><div id="cpu-value" style="font-size:34px;font-weight:800">{{if .Metrics.Available}}{{printf "%.1f" .Metrics.CPU}}%{{else}}N/A{{end}}</div><div class="status-bar"><div id="cpu-bar" style="width:{{.Metrics.CPU}}%"></div></div></article><article class="card"><div class="muted">RAM Kullanımı</div><div id="ram-value" style="font-size:34px;font-weight:800">{{if .Metrics.Available}}{{printf "%.1f" .Metrics.RAM}}%{{else}}N/A{{end}}</div><div class="status-bar"><div id="ram-bar" style="width:{{.Metrics.RAM}}%"></div></div></article><article class="card"><div class="muted">Disk Kullanımı</div><div style="font-size:34px;font-weight:800">N/A</div><small class="muted">Sentinel anık disk verisi sunmuyor.</small></article><article class="card"><div class="muted">Ağ / İnternet</div><div style="font-size:34px;font-weight:800">N/A</div><small class="muted">Sentinel anık ağ verisi sunmuyor.</small></article></section><section class="grid" style="margin-top:16px"><article class="card"><div class="muted">Toplam Kaynak</div><div style="font-size:28px;font-weight:800">{{.Total}}</div></article><article class="card"><div class="muted">Sağlıklı</div><div style="font-size:28px;font-weight:800;color:var(--ok)">{{.Healthy}}</div></article><article class="card"><div class="muted">Sorunlu</div><div style="font-size:28px;font-weight:800;color:var(--danger)">{{.Issues}}</div></article></section>{{end}}
+{{if eq .Page "status"}}<section class="grid"><article class="card"><div class="muted">CPU Kullanımı</div><div id="cpu-value" style="font-size:34px;font-weight:800">{{if .Metrics.Available}}{{printf "%.1f" .Metrics.CPU}}%{{else}}N/A{{end}}</div>{{if .Metrics.Error}}<small class="muted">{{.Metrics.Error}}</small>{{end}}<div class="status-bar"><div id="cpu-bar" style="width:{{.Metrics.CPU}}%"></div></div></article><article class="card"><div class="muted">RAM Kullanımı</div><div id="ram-value" style="font-size:34px;font-weight:800">{{if .Metrics.Available}}{{printf "%.1f" .Metrics.RAM}}%{{else}}N/A{{end}}</div>{{if .Metrics.Error}}<small class="muted">{{.Metrics.Error}}</small>{{end}}<div class="status-bar"><div id="ram-bar" style="width:{{.Metrics.RAM}}%"></div></div></article><article class="card"><div class="muted">Disk Kullanımı</div><div style="font-size:34px;font-weight:800">N/A</div><small class="muted">Sentinel current API disk metriği sunmuyor.</small></article><article class="card"><div class="muted">Ağ / İnternet</div><div style="font-size:34px;font-weight:800">N/A</div><small class="muted">Sentinel current API ağ metriği sunmuyor.</small></article></section><section class="grid" style="margin-top:16px"><article class="card"><div class="muted">Toplam Kaynak</div><div style="font-size:28px;font-weight:800">{{.Total}}</div></article><article class="card"><div class="muted">Sağlıklı</div><div style="font-size:28px;font-weight:800;color:var(--ok)">{{.Healthy}}</div></article><article class="card"><div class="muted">Sorunlu</div><div style="font-size:28px;font-weight:800;color:var(--danger)">{{.Issues}}</div></article></section>{{end}}
 {{if eq .Page "apps"}}<section id="apps">{{range .Apps}}<div class="section"><h2>🗂 {{.Name}}</h2><div class="grid">{{range .Apps}}<article class="card live-resource" data-id="{{.UUID}}"><div class="app-name">{{.Name}}</div><div class="status">● {{.Status}}</div><div class="url">{{.FQDN}}</div><div class="actions">{{if ne $.Role "viewer"}}<form method="post" action="/action"><input type="hidden" name="uuid" value="{{.UUID}}">{{if not (isService .UUID)}}<button class="primary" name="op" value="deploy">🚀 Dağıt</button><button name="op" value="redeploy">♻️ Redeploy</button>{{end}}<button name="op" value="restart">🔄 Yeniden Başlat</button><button class="danger" name="op" value="stop">⏹ Durdur</button>{{if and (eq $.Role "admin") (not (isService .UUID))}}<button class="danger" name="op" value="delete" onclick="return confirm('Bu uygulamayı kalıcı olarak silmek istediğinize emin misiniz?')">🗑 Sil</button>{{end}}</form>{{end}}{{if not (isService .UUID)}}<a class="btn" href="/logs?uuid={{.UUID}}">📜 Loglar</a>{{end}}</div></article>{{end}}</div></div>{{else}}<div class="card">Uygulama bulunamadı.</div>{{end}}</section>{{end}}
 {{if eq .Page "schedules"}}<section class="section"><h2>📅 Yeni Zamanlanmış Görev</h2><p class="muted">İşlem, ilk çalışma zamanı ve tekrar biçimini seçin. Durdur ve Sil yalnızca tek sefer çalıştırılabilir.</p><form class="form-grid" method="post" action="/schedules"><select name="uuid" required><option value="">Uygulama seçin</option>{{range .Apps}}{{range .Apps}}{{if not (isService .UUID)}}<option value="{{.UUID}}">{{.Name}}</option>{{end}}{{end}}{{end}}</select><select name="action" required><option value="restart">Yeniden Başlat</option><option value="redeploy">Redeploy</option><option value="stop">Durdur</option>{{if eq .Role "admin"}}<option value="delete">Sil</option>{{end}}</select><select name="repeat" required><option value="once">Tek seferlik</option><option value="hourly">Saatlik</option><option value="daily">Günlük</option><option value="weekly">Haftalık</option></select><input type="datetime-local" name="run_at" required><button class="primary">Görevi Kaydet</button></form></section><section class="section"><h2>Aktif Görevler</h2>{{range .Tasks}}<div class="row"><span><b>{{.Name}}</b> · {{taskType .Type}} · {{taskSchedule .}} · {{.NextRun.Format "02.01.2006 15:04"}}</span><form method="post" action="/schedules"><input type="hidden" name="task_id" value="{{.ID}}"><button class="danger" name="op" value="delete">İptal Et</button></form></div>{{else}}<div class="card muted">Aktif zamanlanmış görev bulunmuyor.</div>{{end}}</section>{{end}}
 {{if or (eq .Page "resources") (eq .Page "status")}}<section class="section" id="resources"><h2>🗄 Veritabanları ve Sunucular</h2><div class="grid">{{range .Databases}}<article class="card live-resource" data-id="{{.UUID}}"><div class="app-name">{{.Name}}</div><div class="status">● {{.Status}}</div><div class="muted">{{.DatabaseType}} · {{.Image}}</div><div class="muted">CPU limiti: {{if .LimitsCPUs}}{{.LimitsCPUs}}{{else}}Sınırsız{{end}} · RAM limiti: {{if .LimitsMemory}}{{.LimitsMemory}}{{else}}Sınırsız{{end}}</div></article>{{else}}<div class="card muted">Veritabanı kaydı bulunamadı.</div>{{end}}{{range .Servers}}<article class="card live-resource" data-id="{{.UUID}}"><div class="app-name">🖥 {{.Name}}</div><div class="status">● {{if .Status}}{{.Status}}{{else}}{{.ServerStatus}}{{end}}</div><div class="muted">{{.IP}}</div></article>{{end}}</div><p class="muted">Anlık CPU/RAM grafikleri için Coolify sunucusunda Metrics etkin olmalıdır.</p></section>{{end}}

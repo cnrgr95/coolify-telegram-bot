@@ -3,8 +3,10 @@ package src
 import (
 	"coolifymanager/src/config"
 	"coolifymanager/src/database"
+	"coolifymanager/src/monitoring"
 	"coolifymanager/src/scheduler"
 	"fmt"
+	"html"
 	"runtime"
 	"strconv"
 	"strings"
@@ -298,14 +300,34 @@ func pingHandler(c *td.Client, msg *td.Message) error {
 	}
 	serverStatus := "erişilebilir"
 	if len(servers) > 0 && servers[0].ServerStatus != "" {
-		serverStatus = servers[0].ServerStatus
+		serverStatus = string(servers[0].ServerStatus)
 	}
-	text := fmt.Sprintf("<b>📊 Sistem Durumu</b>\n\n🤖 Bot: <b>Çalışıyor</b>\n🖥 Sunucu: <b>%s</b>\n✅ Sağlıklı kaynak: <b>%d</b>\n📦 Uygulama/servis: <b>%d</b>\n🗄 Veritabanı: <b>%d</b>\n⏱ Gecikme: <code>%d ms</code>\n🕒 Çalışma süresi: <code>%s</code>\n⚙️ İş parçacıkları: <code>%d</code>", serverStatus, healthy, len(apps), len(databases), time.Since(start).Milliseconds(), time.Since(startTime).Truncate(time.Second), runtime.NumGoroutine())
+	metrics := monitoring.Load()
+	metricText := "📊 <b>Kaynak Kullanımı</b>\n"
+	if metrics.Available {
+		metricText += fmt.Sprintf("├ CPU: <b>%.1f%%</b>\n├ RAM: <b>%.1f%%</b> (%s / %s)\n", metrics.CPU, metrics.RAM, formatBytes(metrics.RAMUsed), formatBytes(metrics.RAMTotal))
+	} else {
+		metricText += "├ CPU: <b>N/A</b>\n├ RAM: <b>N/A</b>\n"
+		if metrics.Error != "" {
+			metricText += "├ Açıklama: <code>" + html.EscapeString(metrics.Error) + "</code>\n"
+		}
+	}
+	metricText += "├ Disk: <b>N/A</b> (Sentinel current API sunmuyor)\n└ Ağ: <b>N/A</b> (Sentinel current API sunmuyor)"
+	text := fmt.Sprintf("<b>📊 Sistem Durumu</b>\n\n%s\n\n🤖 Bot: <b>Çalışıyor</b>\n🖥 Sunucu: <b>%s</b>\n✅ Sağlıklı kaynak: <b>%d</b>\n📦 Uygulama/servis: <b>%d</b>\n🗄 Veritabanı: <b>%d</b>\n⏱ Gecikme: <code>%d ms</code>\n🕒 Çalışma süresi: <code>%s</code>\n⚙️ İş parçacıkları: <code>%d</code>", metricText, serverStatus, healthy, len(apps), len(databases), time.Since(start).Milliseconds(), time.Since(startTime).Truncate(time.Second), runtime.NumGoroutine())
 	if len(unhealthy) > 0 {
 		text += "\n\n<b>⚠️ Sorunlu Kaynaklar</b>\n• " + strings.Join(unhealthy, "\n• ")
 	}
 	_, err = m.EditText(c, text, &td.EditTextMessageOpts{ParseMode: "HTML"})
 	return err
+}
+
+func formatBytes(value uint64) string {
+	const gib = 1024 * 1024 * 1024
+	if value >= gib {
+		return fmt.Sprintf("%.2f GB", float64(value)/gib)
+	}
+	const mib = 1024 * 1024
+	return fmt.Sprintf("%.1f MB", float64(value)/mib)
 }
 
 func commandID(msg *td.Message) (int64, error) {

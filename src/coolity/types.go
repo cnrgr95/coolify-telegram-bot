@@ -1,5 +1,36 @@
 package coolify
 
+import (
+	"bytes"
+	"encoding/json"
+	"fmt"
+)
+
+type FlexibleString string
+
+func (value *FlexibleString) UnmarshalJSON(data []byte) error {
+	if bytes.Equal(data, []byte("null")) {
+		*value = ""
+		return nil
+	}
+	var text string
+	if err := json.Unmarshal(data, &text); err == nil {
+		*value = FlexibleString(text)
+		return nil
+	}
+	var boolean bool
+	if err := json.Unmarshal(data, &boolean); err == nil {
+		*value = FlexibleString(fmt.Sprintf("%t", boolean))
+		return nil
+	}
+	var number json.Number
+	if err := json.Unmarshal(data, &number); err == nil {
+		*value = FlexibleString(number.String())
+		return nil
+	}
+	return fmt.Errorf("desteklenmeyen metin değeri: %s", data)
+}
+
 type Application struct {
 	ID            int64  `json:"id"`
 	UUID          string `json:"uuid"`
@@ -62,17 +93,17 @@ type StopApplicationResponse struct {
 }
 
 type Resource struct {
-	UUID          string `json:"uuid"`
-	Name          string `json:"name"`
-	Type          string `json:"type"`
-	DatabaseType  string `json:"database_type"`
-	Status        string `json:"status"`
-	ServerStatus  string `json:"server_status"`
-	Image         string `json:"image"`
-	FQDN          string `json:"fqdn"`
-	IP            string `json:"ip"`
-	LimitsCPUs    any    `json:"limits_cpus"`
-	LimitsMemory  any    `json:"limits_memory"`
-	EnvironmentID int64  `json:"environment_id"`
-	Project       string `json:"-"`
+	UUID          string         `json:"uuid"`
+	Name          string         `json:"name"`
+	Type          string         `json:"type"`
+	DatabaseType  string         `json:"database_type"`
+	Status        string         `json:"status"`
+	ServerStatus  FlexibleString `json:"server_status"`
+	Image         string         `json:"image"`
+	FQDN          string         `json:"fqdn"`
+	IP            string         `json:"ip"`
+	LimitsCPUs    any            `json:"limits_cpus"`
+	LimitsMemory  any            `json:"limits_memory"`
+	EnvironmentID int64          `json:"environment_id"`
+	Project       string         `json:"-"`
 }
