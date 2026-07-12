@@ -8,6 +8,7 @@ import (
 
 	td "github.com/AshokShau/gotdbot"
 	"github.com/AshokShau/gotdbot/filters/callbackquery"
+	"github.com/AshokShau/gotdbot/filters/message"
 )
 
 var (
@@ -33,6 +34,7 @@ func InitFunc(c *td.Client) error {
 	c.OnCommand("web_ekle", addWebUserHandler)
 	c.OnCommand("web_sil", removeWebUserHandler)
 	c.OnCommand("web_kullanicilar", listWebUsersHandler)
+	c.OnMessage(quickMenuHandler, message.Private)
 
 	// Callbacks
 	c.OnUpdateNewCallbackQuery(jobsPaginationHandler, callbackquery.Prefix("jobs:"))
@@ -43,6 +45,7 @@ func InitFunc(c *td.Client) error {
 	c.OnUpdateNewCallbackQuery(scheduleCreateHandler, callbackquery.Prefix("sch_c:"))
 	c.OnUpdateNewCallbackQuery(restartHandler, callbackquery.Prefix("restart:"))
 	c.OnUpdateNewCallbackQuery(deployHandler, callbackquery.Prefix("deploy:"))
+	c.OnUpdateNewCallbackQuery(redeployHandler, callbackquery.Prefix("redeploy:"))
 	c.OnUpdateNewCallbackQuery(logsHandler, callbackquery.Prefix("logs:"))
 	c.OnUpdateNewCallbackQuery(statusHandler, callbackquery.Prefix("status:"))
 	c.OnUpdateNewCallbackQuery(stopHandler, callbackquery.Prefix("stop:"))

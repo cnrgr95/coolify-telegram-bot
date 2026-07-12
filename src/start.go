@@ -22,8 +22,40 @@ func startHandler(c *td.Client, msg *td.Message) error {
 		{{Text: "📦 Uygulamalar", Type: &td.InlineKeyboardButtonTypeCallback{Data: []byte("list_projects")}}},
 		{{Text: "📅 Zamanlanmış İşler", Type: &td.InlineKeyboardButtonTypeCallback{Data: []byte("jobs:1")}}},
 	}}
+	menu := &td.ReplyMarkupShowKeyboard{IsPersistent: true, ResizeKeyboard: true, InputFieldPlaceholder: "Hızlı menüden bir işlem seçin", Rows: [][]td.KeyboardButton{
+		{{Text: "📦 Uygulamalar", Type: &td.KeyboardButtonTypeText{}}, {Text: "📊 Sistem Durumu", Type: &td.KeyboardButtonTypeText{}}},
+		{{Text: "👥 Telegram Yetkileri", Type: &td.KeyboardButtonTypeText{}}, {Text: "🖥 Web Kullanıcıları", Type: &td.KeyboardButtonTypeText{}}},
+		{{Text: "📅 Zamanlanmış İşler", Type: &td.KeyboardButtonTypeText{}}, {Text: "🌐 Web Panel", Type: &td.KeyboardButtonTypeText{}}},
+	}}
 	_, err := msg.ReplyText(c, text, &td.SendTextMessageOpts{ParseMode: "HTML", ReplyMarkup: kb})
+	if err == nil {
+		_, err = msg.ReplyText(c, "Hızlı menü aktif.", &td.SendTextMessageOpts{ReplyMarkup: menu})
+	}
 	return err
+}
+
+func quickMenuHandler(c *td.Client, msg *td.Message) error {
+	if !config.IsDev(msg.SenderID()) {
+		return nil
+	}
+	switch strings.TrimSpace(msg.Text()) {
+	case "📊 Sistem Durumu":
+		return pingHandler(c, msg)
+	case "👥 Telegram Yetkileri":
+		return listAuthorizedHandler(c, msg)
+	case "🖥 Web Kullanıcıları":
+		return listWebUsersHandler(c, msg)
+	case "📅 Zamanlanmış İşler":
+		return jobsHandler(c, msg)
+	case "🌐 Web Panel":
+		_, err := msg.ReplyText(c, "Web paneli: https://tg.flpanel.cloud", nil)
+		return err
+	case "📦 Uygulamalar":
+		kb := &td.ReplyMarkupInlineKeyboard{Rows: [][]td.InlineKeyboardButton{{{Text: "📦 Uygulamaları Aç", Type: &td.InlineKeyboardButtonTypeCallback{Data: []byte("list_projects")}}}}}
+		_, err := msg.ReplyText(c, "Uygulama listesini açmak için dokunun.", &td.SendTextMessageOpts{ReplyMarkup: kb})
+		return err
+	}
+	return nil
 }
 
 func pingHandler(c *td.Client, msg *td.Message) error {

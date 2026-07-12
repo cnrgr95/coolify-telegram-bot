@@ -30,6 +30,30 @@ type Client struct {
 	cache   *cache
 }
 
+func (c *Client) listResources(path string) ([]Resource, error) {
+	req, err := http.NewRequest(http.MethodGet, c.BaseURL+path, nil)
+	if err != nil {
+		return nil, err
+	}
+	req.Header.Set("Authorization", "Bearer "+c.Token)
+	resp, err := c.Client.Do(req)
+	if err != nil {
+		return nil, err
+	}
+	defer resp.Body.Close()
+	if resp.StatusCode < 200 || resp.StatusCode >= 300 {
+		return nil, fmt.Errorf("kaynaklar alınamadı: %s", resp.Status)
+	}
+	var resources []Resource
+	if err := json.NewDecoder(resp.Body).Decode(&resources); err != nil {
+		return nil, err
+	}
+	return resources, nil
+}
+
+func (c *Client) ListDatabases() ([]Resource, error) { return c.listResources("/api/v1/databases") }
+func (c *Client) ListServers() ([]Resource, error)   { return c.listResources("/api/v1/servers") }
+
 func (c *Client) ListApplications() ([]Application, error) {
 	// Check cache first
 	if c.cache != nil {

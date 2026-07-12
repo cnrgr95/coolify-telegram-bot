@@ -159,6 +159,9 @@ func projectMenuHandler(c *td.Client, cb *td.UpdateNewCallbackQuery) error {
 				},
 			},
 			{
+				{Text: "♻️ Redeploy", Type: &td.InlineKeyboardButtonTypeCallback{Data: []byte("redeploy:" + uuid)}},
+			},
+			{
 				{
 					Text: "🛑 Durdur",
 					Type: &td.InlineKeyboardButtonTypeCallback{
@@ -266,6 +269,21 @@ func deployHandler(c *td.Client, cb *td.UpdateNewCallbackQuery) error {
 
 	text := fmt.Sprintf("âœ… Dağıtım queued!\nDağıtım UUID: <code>%s</code>", res.DeploymentUUID)
 	_, err = cb.EditMessageText(c, text, &td.EditTextMessageOpts{ParseMode: "HTML", ReplyMarkup: kb})
+	return err
+}
+
+func redeployHandler(c *td.Client, cb *td.UpdateNewCallbackQuery) error {
+	if !config.Can(cb.SenderUserId, "restart") {
+		_ = cb.Answer(c, 0, true, "Bu işlem için yetkiniz yok.", "")
+		return nil
+	}
+	resourceID := strings.TrimPrefix(cb.DataString(), "redeploy:")
+	res, err := config.Coolify.StartApplicationDeployment(resourceID, true, false)
+	if err != nil {
+		_, _ = cb.EditMessageText(c, "❌ Redeploy başlatılamadı: "+err.Error(), nil)
+		return nil
+	}
+	_, err = cb.EditMessageText(c, fmt.Sprintf("✅ Redeploy kuyruğa alındı.\nDağıtım: <code>%s</code>", res.DeploymentUUID), &td.EditTextMessageOpts{ParseMode: "HTML"})
 	return err
 }
 
