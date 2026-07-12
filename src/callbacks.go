@@ -110,6 +110,9 @@ func projectMenuHandler(c *td.Client, cb *td.UpdateNewCallbackQuery) error {
 				},
 			},
 		}
+		if !config.Can(cb.SenderUserId, "restart") {
+			kb.Rows = kb.Rows[1:]
+		}
 		_, e := cb.EditMessageText(c, fmt.Sprintf("<b>%s</b>\nDurum: <code>%s</code>\n\nBu kaynak bir Docker Compose servisidir.", found.Name, found.Status), &td.EditTextMessageOpts{ParseMode: "HTML", ReplyMarkup: kb})
 		return e
 	}
@@ -185,6 +188,19 @@ func projectMenuHandler(c *td.Client, cb *td.UpdateNewCallbackQuery) error {
 			},
 		},
 	}
+	if config.Role(cb.SenderUserId) == "viewer" {
+		kb.Rows = [][]td.InlineKeyboardButton{kb.Rows[1], kb.Rows[len(kb.Rows)-1]}
+	} else if !config.Can(cb.SenderUserId, "delete") {
+		for rowIndex := range kb.Rows {
+			filtered := kb.Rows[rowIndex][:0]
+			for _, button := range kb.Rows[rowIndex] {
+				if button.Text != "❌ Sil" {
+					filtered = append(filtered, button)
+				}
+			}
+			kb.Rows[rowIndex] = filtered
+		}
+	}
 
 	_, err = cb.EditMessageText(c, text, &td.EditTextMessageOpts{
 		ParseMode:   "HTML",
@@ -195,7 +211,7 @@ func projectMenuHandler(c *td.Client, cb *td.UpdateNewCallbackQuery) error {
 }
 
 func restartHandler(c *td.Client, cb *td.UpdateNewCallbackQuery) error {
-	if !config.IsDev(cb.SenderUserId) {
+	if !config.Can(cb.SenderUserId, "restart") {
 		_ = cb.Answer(c, 0, true, "ğŸš« Bu işlem için yetkiniz yok.", "")
 		return nil
 	}
@@ -238,7 +254,7 @@ func restartHandler(c *td.Client, cb *td.UpdateNewCallbackQuery) error {
 }
 
 func deployHandler(c *td.Client, cb *td.UpdateNewCallbackQuery) error {
-	if !config.IsDev(cb.SenderUserId) {
+	if !config.Can(cb.SenderUserId, "deploy") {
 		_ = cb.Answer(c, 0, true, "ğŸš« Bu işlem için yetkiniz yok.", "")
 		return nil
 	}
@@ -273,7 +289,7 @@ func deployHandler(c *td.Client, cb *td.UpdateNewCallbackQuery) error {
 }
 
 func redeployHandler(c *td.Client, cb *td.UpdateNewCallbackQuery) error {
-	if !config.Can(cb.SenderUserId, "restart") {
+	if !config.Can(cb.SenderUserId, "deploy") {
 		_ = cb.Answer(c, 0, true, "Bu işlem için yetkiniz yok.", "")
 		return nil
 	}
@@ -288,7 +304,7 @@ func redeployHandler(c *td.Client, cb *td.UpdateNewCallbackQuery) error {
 }
 
 func logsHandler(c *td.Client, cb *td.UpdateNewCallbackQuery) error {
-	if !config.IsDev(cb.SenderUserId) {
+	if !config.Can(cb.SenderUserId, "logs") {
 		_ = cb.Answer(c, 0, true, "ğŸš« Bu işlem için yetkiniz yok.", "")
 		return nil
 	}
@@ -341,7 +357,7 @@ func logsHandler(c *td.Client, cb *td.UpdateNewCallbackQuery) error {
 }
 
 func statusHandler(c *td.Client, cb *td.UpdateNewCallbackQuery) error {
-	if !config.IsDev(cb.SenderUserId) {
+	if !config.Can(cb.SenderUserId, "view") {
 		_ = cb.Answer(c, 0, true, "ğŸš« Bu işlem için yetkiniz yok.", "")
 		return nil
 	}
@@ -375,7 +391,7 @@ func statusHandler(c *td.Client, cb *td.UpdateNewCallbackQuery) error {
 }
 
 func stopHandler(c *td.Client, cb *td.UpdateNewCallbackQuery) error {
-	if !config.IsDev(cb.SenderUserId) {
+	if !config.Can(cb.SenderUserId, "stop") {
 		_ = cb.Answer(c, 0, true, "ğŸš« Bu işlem için yetkiniz yok.", "")
 		return nil
 	}
@@ -417,7 +433,7 @@ func stopHandler(c *td.Client, cb *td.UpdateNewCallbackQuery) error {
 }
 
 func deleteHandler(c *td.Client, cb *td.UpdateNewCallbackQuery) error {
-	if !config.IsDev(cb.SenderUserId) {
+	if !config.Can(cb.SenderUserId, "delete") {
 		_ = cb.Answer(c, 0, true, "ğŸš« Bu işlem için yetkiniz yok.", "")
 		return nil
 	}
@@ -450,7 +466,7 @@ func deleteHandler(c *td.Client, cb *td.UpdateNewCallbackQuery) error {
 }
 
 func scheduleMenuHandler(c *td.Client, cb *td.UpdateNewCallbackQuery) error {
-	if !config.IsDev(cb.SenderUserId) {
+	if !config.Can(cb.SenderUserId, "schedule") {
 		_ = cb.Answer(c, 0, true, "ğŸš« Bu işlem için yetkiniz yok.", "")
 		return nil
 	}
@@ -488,7 +504,7 @@ func scheduleMenuHandler(c *td.Client, cb *td.UpdateNewCallbackQuery) error {
 }
 
 func scheduleActionHandler(c *td.Client, cb *td.UpdateNewCallbackQuery) error {
-	if !config.IsDev(cb.SenderUserId) {
+	if !config.Can(cb.SenderUserId, "schedule") {
 		_ = cb.Answer(c, 0, true, "ğŸš« Bu işlem için yetkiniz yok.", "")
 		return nil
 	}
@@ -566,7 +582,7 @@ func scheduleActionHandler(c *td.Client, cb *td.UpdateNewCallbackQuery) error {
 }
 
 func scheduleCreateHandler(c *td.Client, cb *td.UpdateNewCallbackQuery) error {
-	if !config.IsDev(cb.SenderUserId) {
+	if !config.Can(cb.SenderUserId, "schedule") {
 		_ = cb.Answer(c, 0, true, "ğŸš« Bu işlem için yetkiniz yok.", "")
 		return nil
 	}

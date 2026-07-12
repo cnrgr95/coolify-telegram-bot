@@ -227,6 +227,31 @@ func IsDev(userID int64) bool {
 }
 
 func IsOwner(userID int64) bool { return len(devIDs) > 0 && devIDs[0] == userID }
-func OwnerID() int64 { if len(devIDs)>0{return devIDs[0]}; return 0 }
-func Role(userID int64) string { if IsOwner(userID){return "owner"};return database.AuthorizedRole(userID) }
-func Can(userID int64, action string) bool { r:=Role(userID);if r=="owner"||r=="admin"{return true};if r=="operator"{return action!="delete"&&action!="users"};return r=="viewer"&&(action=="view"||action=="logs") }
+func OwnerID() int64 {
+	if len(devIDs) > 0 {
+		return devIDs[0]
+	}
+	return 0
+}
+func Role(userID int64) string {
+	if IsOwner(userID) {
+		return "owner"
+	}
+	return database.AuthorizedRole(userID)
+}
+func Can(userID int64, action string) bool {
+	role := Role(userID)
+	if role == "owner" || role == "admin" {
+		return true
+	}
+	if role == "viewer" {
+		return action == "view" || action == "logs"
+	}
+	if role == "operator" {
+		switch action {
+		case "view", "logs", "deploy", "restart", "stop", "schedule":
+			return true
+		}
+	}
+	return false
+}
